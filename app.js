@@ -1,5 +1,6 @@
 import { parse } from "./parser.js";
-import { newState, snapshot, execute, metrics, polySegments, sampleSegment, buildDxf } from "./cad.js";
+import { newState, snapshot, execute, metrics, polySegments, sampleSegment } from "./cad.js";
+import { buildDxf, toCp1251 } from "./dxf.js";
 
 const DB_KEY = "cadvoice-projects-v1";
 const LEGACY_KEY = "cadvoice-state-v1";
@@ -378,7 +379,7 @@ function shareFile(blob, name, type) {
 
 function exportDxf() {
   const dxf = buildDxf(state.entities);
-  shareFile(new Blob([dxf], { type: "application/dxf" }), fileName("dxf"), "application/dxf");
+  shareFile(new Blob([toCp1251(dxf)], { type: "application/dxf" }), fileName("dxf"), "application/dxf");
 }
 
 function exportPng() {
