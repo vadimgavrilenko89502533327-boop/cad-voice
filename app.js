@@ -18,6 +18,8 @@ let listening = false;
 const canvas = $("canvas");
 const ctx = canvas.getContext("2d");
 const view = { zoom: 1, panX: 0, panY: 0 };
+let lastNodes = [];
+let lastTr = null;
 
 // Угол поворота текста вдоль линии, чтобы текст не был вверх ногами
 function readableAngle(dx, dy) {
@@ -216,7 +218,15 @@ function draw() {
     else if (e.type === "seg") pts.push(e.a, e.b);
   }
 
+  const nodes = [];
+  for (const e of state.entities) {
+    if (e.type === "poly") nodes.push(...e.pts);
+    else if (e.type === "seg") nodes.push(e.a, e.b);
+  }
+  lastNodes = nodes;
+
   if (pts.length < 2) {
+    lastTr = null;
     ctx.fillStyle = "#8a8a8a";
     ctx.font = "16px system-ui";
     ctx.textAlign = "center";
@@ -304,6 +314,25 @@ function draw() {
       ctx.restore();
     }
   }
+
+  lastTr = tr;
+  ctx.save();
+  ctx.fillStyle = "#ffffff";
+  ctx.strokeStyle = "#8a8a8a";
+  ctx.lineWidth = 1.5;
+  for (const n of nodes) {
+    const q = tr(n);
+    ctx.beginPath();
+    ctx.arc(q.x, q.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  const pen = tr(state.pos);
+  ctx.fillStyle = "#c0392b";
+  ctx.beginPath();
+  ctx.arc(pen.x, pen.y, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 
   const ox = 30, oy = H - 30;
   ctx.lineWidth = 2;
@@ -533,10 +562,14 @@ function zoomAt(px, py, ratio) {
   view.zoom = nz;
 }
 
+let tap = null;
+
 canvas.addEventListener("pointerdown", (e) => {
   canvas.setPointerCapture(e.pointerId);
-  pointers.set(e.pointerId, canvasPoint(e));
+  const p = canvasPoint(e);
+  pointers.set(e.pointerId, p);
   pinchDist = 0;
+  tap = pointers.size === 1 ? { x: p.x, y: p.y, t: Date.now() } : null;
 });
 
 canvas.addEventListener("pointermove", (e) => {
@@ -544,6 +577,7 @@ canvas.addEventListener("pointermove", (e) => {
   const prev = pointers.get(e.pointerId);
   const cur = canvasPoint(e);
   pointers.set(e.pointerId, cur);
+  if (tap && Math.hypot(cur.x - tap.x, cur.y - tap.y) > 8) tap = null;
   if (pointers.size === 1) {
     view.panX += cur.x - prev.x;
     view.panY += cur.y - prev.y;
@@ -557,9 +591,33 @@ canvas.addEventListener("pointermove", (e) => {
   draw();
 });
 
+function pickNode(p) {
+  if (!lastTr) return;
+  let best = null, bestD = 24;
+  for (const n of lastNodes) {
+    const q = lastTr(n);
+    const d = Math.hypot(q.x - p.x, q.y - p.y);
+    if (d < bestD) { bestD = d; best = n; }
+  }
+  if (!best) return;
+  undoStack.push(snapshot(state));
+  redoStack = [];
+  state.pos = { x: best.x, y: best.y };
+  state.active = null;
+  addHistory(`Продолжение от точки (${best.x.toFixed(0)}, ${best.y.toFixed(0)})`);
+  persist();
+  draw();
+  setStatus("Точка выбрана. Следующая линия пойдёт отсюда.", "idle");
+}
+
 function endPointer(e) {
+  const wasSingle = pointers.size === 1 && pointers.has(e.pointerId);
+  if (e.type === "pointerup" && tap && wasSingle && Date.now() - tap.t < 500) {
+    pickNode(canvasPoint(e));
+  }
   pointers.delete(e.pointerId);
   pinchDist = 0;
+  if (pointers.size === 0) tap = null;
 }
 canvas.addEventListener("pointerup", endPointer);
 canvas.addEventListener("pointercancel", endPointer);
