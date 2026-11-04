@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="CAD Voice">
+  <meta name="theme-color" content="#f2f2f2">
+  <title>CAD Voice Assistant</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <style>
+    :root { --bg:#f2f2f2; --card:#e9e9e9; --dark:#1c1c1c; --muted:#8a8a8a; --red:#c0392b; }
+    * { box-sizing: border-box; }
+    html, body { margin:0; height:100%; background:var(--bg); font-family: -apple-system, system-ui, "Segoe UI", sans-serif; color:var(--dark); }
+    body { display:flex; flex-direction:column; padding: env(safe-area-inset-top) 12px env(safe-area-inset-bottom); height:100dvh; }
+    header { display:flex; align-items:center; justify-content:space-between; padding:8px 4px; }
+    h1 { font-size:18px; margin:0; font-weight:700; }
+    #status { font-size:13px; color:#7f7f7f; }
+    #status.rec { color: var(--red); }
+    #status.busy { color:#d68910; }
+    #canvas { flex:1; width:100%; min-height:200px; border-radius:14px; background:#fbfbfb; display:block; }
+    .row { display:flex; gap:8px; margin-top:8px; }
+    .card { flex:1; background:var(--card); border-radius:12px; padding:10px 14px; }
+    .card small { color:var(--muted); font-size:11px; display:block; }
+    .card b { font-size:20px; }
+    #heard { font-size:13px; min-height:18px; margin:8px 4px 0; color:#333; }
+    #partial { font-size:13px; min-height:16px; margin:0 4px; color:var(--muted); font-style:italic; }
+    .hist-head { display:flex; justify-content:space-between; align-items:center; margin:8px 4px 0; }
+    .hist-head span { font-weight:700; font-size:14px; }
+    #history { list-style:none; margin:4px 0 0; padding:0; max-height:22vh; overflow:auto; font-size:13px; }
+    #history li { display:flex; justify-content:space-between; gap:8px; padding:5px 4px; border-bottom:1px solid #e0e0e0; }
+    #history time { color:var(--muted); white-space:nowrap; }
+    button { font:inherit; border:0; border-radius:12px; background:#e2e2e2; color:var(--dark); padding:10px 12px; cursor:pointer; }
+    button:active { background:#d4d4d4; }
+    #mic { width:64px; height:64px; border-radius:50%; background:var(--dark); color:#fff; font-size:24px; padding:0; flex:none; }
+    #mic.on { background:var(--red); }
+    .bottom { display:flex; align-items:center; gap:8px; margin-top:8px; padding-bottom:6px; }
+    .bottom .grow { flex:1; display:flex; gap:8px; }
+    .bottom .grow button { flex:1; }
+    form { display:flex; gap:8px; margin-top:8px; }
+    form input { flex:1; font:inherit; font-size:16px; border:1px solid #d6d6d6; border-radius:12px; padding:10px 12px; background:#fff; }
+    form button { background:var(--dark); color:#fff; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>CAD Voice Assistant</h1>
+    <span id="status">Загрузка...</span>
+  </header>
+
+  <canvas id="canvas"></canvas>
+
+  <div class="row">
+    <div class="card"><small>Площадь помещения</small><b id="area">0.00 м²</b></div>
+    <div class="card"><small>Периметр</small><b id="perim">0.00 м</b></div>
+  </div>
+
+  <div id="heard"></div>
+  <div id="partial"></div>
+
+  <div class="hist-head">
+    <span>История команд</span>
+    <button id="clearHistory" style="background:none;padding:2px 6px;color:var(--muted)">Очистить</button>
+  </div>
+  <ul id="history"></ul>
+
+  <form id="form">
+    <input id="input" type="text" placeholder="Команда текстом, например: прямо 500" autocomplete="off" autocapitalize="off">
+    <button type="submit">OK</button>
+  </form>
+
+  <div class="bottom">
+    <button id="mic" title="Запись">●</button>
+    <div class="grow">
+      <button id="undo">Отменить</button>
+      <button id="save">DXF</button>
+      <button id="clear">Новый</button>
+    </div>
+  </div>
+
+  <script src="vendor/vosk.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

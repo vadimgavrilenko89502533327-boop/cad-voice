@@ -1,0 +1,8 @@
+{
+  "name": "CAD Voice Assistant",
+  "short_name": "CAD Voice",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f2f2f2",
+  "theme_color": "#f2f2f2"
+}
