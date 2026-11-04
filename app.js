@@ -403,6 +403,8 @@ async function startListening() {
 // ---------- голос через Safari (Web Speech API) ----------
 const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 let webRec = null;
+let lastStart = 0;
+let quickEnds = 0;
 
 function speechErrorText(code) {
   if (code === "not-allowed" || code === "service-not-allowed")
@@ -440,13 +442,26 @@ function startWebSpeech() {
   };
   webRec.onend = () => {
     if (!listening || !webRec) return;
-    try {
-      webRec.start();
-    } catch (err) {
+    const now = Date.now();
+    quickEnds = now - lastStart < 1500 ? quickEnds + 1 : 0;
+    if (quickEnds >= 3) {
       stopListening();
-      setStatus("Слушание остановлено. Нажмите ● ещё раз.", "idle");
+      setStatus("Safari не даёт слушать. Нажмите ● ещё раз.", "idle");
+      return;
     }
+    setTimeout(() => {
+      if (!listening || !webRec) return;
+      lastStart = Date.now();
+      try {
+        webRec.start();
+      } catch (err) {
+        stopListening();
+        setStatus("Слушание остановлено. Нажмите ● ещё раз.", "idle");
+      }
+    }, 400);
   };
+  lastStart = Date.now();
+  quickEnds = 0;
   try {
     webRec.start();
   } catch (err) {
