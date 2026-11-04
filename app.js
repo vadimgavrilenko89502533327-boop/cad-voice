@@ -400,7 +400,71 @@ async function startListening() {
   }
 }
 
+// ---------- голос через Safari (Web Speech API) ----------
+const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+let webRec = null;
+
+function speechErrorText(code) {
+  if (code === "not-allowed" || code === "service-not-allowed")
+    return "Нет доступа к микрофону или распознаванию. Настройки → Safari → Микрофон → Разрешить.";
+  if (code === "network") return "Нет связи с сервисом распознавания Apple. Нужен интернет.";
+  if (code === "language-not-supported") return "Русский язык не поддерживается этим браузером.";
+  return "Ошибка распознавания: " + code;
+}
+
+function startWebSpeech() {
+  webRec = new SpeechRec();
+  webRec.lang = "ru-RU";
+  webRec.continuous = false;
+  webRec.interimResults = true;
+  webRec.maxAlternatives = 1;
+  webRec.onresult = (e) => {
+    let interim = "", final = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const r = e.results[i];
+      if (r.isFinal) final += r[0].transcript;
+      else interim += r[0].transcript;
+    }
+    $("partial").textContent = interim;
+    const text = final.trim();
+    if (text) {
+      $("partial").textContent = "";
+      $("heard").textContent = "Вы сказали: " + text;
+      runText(text);
+    }
+  };
+  webRec.onerror = (e) => {
+    if (e.error === "no-speech" || e.error === "aborted") return;
+    setStatus(speechErrorText(e.error), "idle");
+    if (e.error === "not-allowed" || e.error === "service-not-allowed") stopListening();
+  };
+  webRec.onend = () => {
+    if (!listening || !webRec) return;
+    try {
+      webRec.start();
+    } catch (err) {
+      stopListening();
+      setStatus("Слушание остановлено. Нажмите ● ещё раз.", "idle");
+    }
+  };
+  try {
+    webRec.start();
+  } catch (err) {
+    setStatus("Не удалось запустить распознавание. Нажмите ● ещё раз.", "idle");
+    return;
+  }
+  listening = true;
+  $("mic").classList.add("on");
+  setStatus("Слушаю", "rec");
+}
+
 function stopListening() {
+  if (webRec) {
+    const r = webRec;
+    webRec = null;
+    r.onend = null;
+    try { r.stop(); } catch (e) { /* уже остановлен */ }
+  }
   if (audio) {
     audio.proc.disconnect();
     audio.src.disconnect();
@@ -415,7 +479,11 @@ function stopListening() {
 }
 
 // ---------- кнопки и ввод ----------
-$("mic").addEventListener("click", () => (listening ? stopListening() : startListening()));
+$("mic").addEventListener("click", () => {
+  if (listening) stopListening();
+  else if (SpeechRec) startWebSpeech();
+  else startListening();
+});
 $("startLine").addEventListener("click", () => runText("начать"));
 $("breakLine").addEventListener("click", () => runText("прервать"));
 $("left90").addEventListener("click", () => runText("налево 90"));
