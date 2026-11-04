@@ -378,6 +378,8 @@ function stopListening() {
 
 // ---------- кнопки и ввод ----------
 $("mic").addEventListener("click", () => (listening ? stopListening() : startListening()));
+$("startLine").addEventListener("click", () => runText("начать"));
+$("breakLine").addEventListener("click", () => runText("прервать"));
 $("left90").addEventListener("click", () => runText("налево 90"));
 $("right90").addEventListener("click", () => runText("направо 90"));
 $("undo").addEventListener("click", () => runText("отмена"));

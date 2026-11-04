@@ -37,6 +37,8 @@ const FILLERS = new Set([
 ]);
 
 const SIMPLE = [
+  ["начать", "new_polyline"], ["начни", "new_polyline"],
+  ["прервать", "end_polyline"], ["прерви", "end_polyline"],
   ["новая полилиния", "new_polyline"], ["новый контур", "new_polyline"],
   ["начать заново", "new_polyline"], ["новая линия", "new_polyline"],
   ["завершить", "end_polyline"], ["конец", "end_polyline"], ["закончить", "end_polyline"],
@@ -61,6 +63,7 @@ const RE = {
   circle: /(?:окружность|круг|circle)\s*(?:радиус|r)?\s*(?<r>[\d.,]+)\s*(?<unit>см|мм|м)?/i,
   rect: /(?:прямоугольник|rect(?:angle)?)\s*(?<w>[\d.,]+)\s*(?:на|x|х|по)\s*(?<h>[\d.,]+)\s*(?<unit>см|мм|м)?/i,
   text: /(?:текст|подпись|надпись|text|label)\s+(?<txt>.+)/i,
+  bare: /^(?<dist>[\d.,]+)\s*(?<unit>см|мм|м|метр(?:а|ов)?|м\.?)?$/i,
   window: /(?:окно|окна|окошко)\s*(?:длин[а-я]*\s*)?(?<dist>[\d.,]+)\s*(?<unit>см|мм|м|метр(?:а|ов)?|м\.?)?/i,
   door: /(?:дверь|двери)\s*(?:длин[а-я]*\s*)?(?<dist>[\d.,]+)\s*(?<unit>см|мм|м|метр(?:а|ов)?|м\.?)?/i,
   height: /высота\s*(?<h>[\d.,]+)/gi,
@@ -183,6 +186,11 @@ export function parse(text) {
   }
 
   m = RE.forward.exec(t);
+  if (m && num(m.groups.dist) !== null) {
+    return { intent: "forward", args: { dist_cm: toCm(num(m.groups.dist), m.groups.unit) }, raw: text };
+  }
+
+  m = RE.bare.exec(t);
   if (m && num(m.groups.dist) !== null) {
     return { intent: "forward", args: { dist_cm: toCm(num(m.groups.dist), m.groups.unit) }, raw: text };
   }
