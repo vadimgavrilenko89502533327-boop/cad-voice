@@ -17,6 +17,15 @@ let listening = false;
 
 const canvas = $("canvas");
 const ctx = canvas.getContext("2d");
+const view = { zoom: 1, panX: 0, panY: 0 };
+
+// Угол поворота текста вдоль линии, чтобы текст не был вверх ногами
+function readableAngle(dx, dy) {
+  let a = Math.atan2(dy, dx);
+  if (a > Math.PI / 2) a -= Math.PI;
+  else if (a < -Math.PI / 2) a += Math.PI;
+  return a;
+}
 
 // ---------- проекты (хранятся в памяти телефона/браузера) ----------
 function loadDb() {
@@ -220,9 +229,13 @@ function draw() {
   const miny = Math.min(...pts.map((p) => p.y)), maxy = Math.max(...pts.map((p) => p.y));
   const m = 50;
   const bw = Math.max(maxx - minx, 1e-6), bh = Math.max(maxy - miny, 1e-6);
-  const s = Math.min((W - 2 * m) / bw, (H - 2 * m - 30) / bh);
+  const fit = Math.min((W - 2 * m) / bw, (H - 2 * m - 30) / bh);
+  const s = fit * view.zoom;
   const cx = (minx + maxx) / 2, cy = (miny + maxy) / 2;
-  const tr = (p) => ({ x: W / 2 + (p.x - cx) * s, y: (H - 30) / 2 - (p.y - cy) * s });
+  const tr = (p) => ({
+    x: W / 2 + view.panX + (p.x - cx) * s,
+    y: (H - 30) / 2 + view.panY - (p.y - cy) * s,
+  });
 
   ctx.strokeStyle = "#1c1c1c";
   ctx.fillStyle = "#1c1c1c";
@@ -251,7 +264,11 @@ function draw() {
         const dx = bq.x - a.x, dy = bq.y - a.y;
         const L = Math.hypot(dx, dy) || 1;
         const lenM = Math.hypot(q.x - p.x, q.y - p.y) / 100;
-        ctx.fillText(lenM.toFixed(2), (a.x + bq.x) / 2 - (dy / L) * 14, (a.y + bq.y) / 2 + (dx / L) * 14);
+        ctx.save();
+        ctx.translate((a.x + bq.x) / 2, (a.y + bq.y) / 2);
+        ctx.rotate(readableAngle(dx, dy));
+        ctx.fillText(lenM.toFixed(2), 0, -12);
+        ctx.restore();
       }
     } else if (e.type === "seg") {
       const a = tr(e.a), b = tr(e.b);
@@ -280,7 +297,11 @@ function draw() {
       ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
       ctx.lineWidth = 4;
-      ctx.fillText(e.label, (a.x + b.x) / 2, (a.y + b.y) / 2 - 10);
+      ctx.save();
+      ctx.translate((a.x + b.x) / 2, (a.y + b.y) / 2);
+      ctx.rotate(readableAngle(b.x - a.x, b.y - a.y));
+      ctx.fillText(e.label, 0, -10);
+      ctx.restore();
     }
   }
 
@@ -493,7 +514,75 @@ function stopListening() {
   setStatus("Готов к работе", "idle");
 }
 
+// ---------- сдвиг и масштаб области чертежа ----------
+const pointers = new Map();
+let pinchDist = 0;
+
+function canvasPoint(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
+function zoomAt(px, py, ratio) {
+  const W = canvas.clientWidth, H = canvas.clientHeight;
+  const ox = W / 2, oy = (H - 30) / 2;
+  const nz = Math.min(20, Math.max(0.2, view.zoom * ratio));
+  const k = nz / view.zoom;
+  view.panX = (px - ox) - ((px - ox) - view.panX) * k;
+  view.panY = (py - oy) - ((py - oy) - view.panY) * k;
+  view.zoom = nz;
+}
+
+canvas.addEventListener("pointerdown", (e) => {
+  canvas.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, canvasPoint(e));
+  pinchDist = 0;
+});
+
+canvas.addEventListener("pointermove", (e) => {
+  if (!pointers.has(e.pointerId)) return;
+  const prev = pointers.get(e.pointerId);
+  const cur = canvasPoint(e);
+  pointers.set(e.pointerId, cur);
+  if (pointers.size === 1) {
+    view.panX += cur.x - prev.x;
+    view.panY += cur.y - prev.y;
+  } else if (pointers.size >= 2) {
+    const [a, b] = [...pointers.values()];
+    const d = Math.hypot(b.x - a.x, b.y - a.y);
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    if (pinchDist > 0 && d > 0) zoomAt(mx, my, d / pinchDist);
+    pinchDist = d;
+  }
+  draw();
+});
+
+function endPointer(e) {
+  pointers.delete(e.pointerId);
+  pinchDist = 0;
+}
+canvas.addEventListener("pointerup", endPointer);
+canvas.addEventListener("pointercancel", endPointer);
+
+canvas.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const p = canvasPoint(e);
+  zoomAt(p.x, p.y, e.deltaY < 0 ? 1.1 : 1 / 1.1);
+  draw();
+}, { passive: false });
+
+function zoomCenter(ratio) {
+  zoomAt(canvas.clientWidth / 2, (canvas.clientHeight - 30) / 2, ratio);
+  draw();
+}
+
 // ---------- кнопки и ввод ----------
+$("zin").addEventListener("click", () => zoomCenter(1.25));
+$("zout").addEventListener("click", () => zoomCenter(1 / 1.25));
+$("zfit").addEventListener("click", () => {
+  view.zoom = 1; view.panX = 0; view.panY = 0;
+  draw();
+});
 $("mic").addEventListener("click", () => {
   if (listening) stopListening();
   else if (SpeechRec) startWebSpeech();
