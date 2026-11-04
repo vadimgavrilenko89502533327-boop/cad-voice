@@ -61,6 +61,8 @@ const RE = {
   circle: /(?:окружность|круг|circle)\s*(?:радиус|r)?\s*(?<r>[\d.,]+)\s*(?<unit>см|мм|м)?/i,
   rect: /(?:прямоугольник|rect(?:angle)?)\s*(?<w>[\d.,]+)\s*(?:на|x|х|по)\s*(?<h>[\d.,]+)\s*(?<unit>см|мм|м)?/i,
   text: /(?:текст|подпись|надпись|text|label)\s+(?<txt>.+)/i,
+  window: /(?:окно|окна|окошко)\s*(?:длин[а-я]*\s*)?(?<dist>[\d.,]+)\s*(?<unit>см|мм|м|метр(?:а|ов)?|м\.?)?/i,
+  door: /(?:дверь|двери)\s*(?:длин[а-я]*\s*)?(?<dist>[\d.,]+)\s*(?<unit>см|мм|м|метр(?:а|ов)?|м\.?)?/i,
   height: /высота\s*(?<h>[\d.,]+)/gi,
 };
 const TEXT_CMD = /^\s*(текст|подпись|надпись)(?![а-яa-z])/i;
@@ -168,6 +170,16 @@ export function parse(text) {
       txt = txt.replace(new RegExp(RE.height.source, "gi"), "").trim();
     }
     return { intent: "text", args: { text: txt, height_cm: height }, raw: text };
+  }
+
+  m = RE.window.exec(t);
+  if (m && num(m.groups.dist) !== null) {
+    return { intent: "window", args: { dist_cm: toCm(num(m.groups.dist), m.groups.unit) }, raw: text };
+  }
+
+  m = RE.door.exec(t);
+  if (m && num(m.groups.dist) !== null) {
+    return { intent: "door", args: { dist_cm: toCm(num(m.groups.dist), m.groups.unit) }, raw: text };
   }
 
   m = RE.forward.exec(t);

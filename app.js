@@ -1,10 +1,13 @@
 import { parse } from "./parser.js";
 import { newState, snapshot, execute, metrics, polySegments, sampleSegment, buildDxf } from "./cad.js";
 
-const STORE_KEY = "cadvoice-state-v1";
+const DB_KEY = "cadvoice-projects-v1";
+const LEGACY_KEY = "cadvoice-state-v1";
 const $ = (id) => document.getElementById(id);
+const newId = () => "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
-let state = loadState();
+let db = loadDb();
+let state = db.projects[db.current].state;
 let undoStack = [];
 let model = null;
 let recognizer = null;
@@ -14,22 +17,119 @@ let listening = false;
 const canvas = $("canvas");
 const ctx = canvas.getContext("2d");
 
-// ---------- состояние и сохранение ----------
-function loadState() {
+// ---------- проекты (хранятся в памяти телефона/браузера) ----------
+function loadDb() {
   try {
-    const saved = JSON.parse(localStorage.getItem(STORE_KEY));
-    if (saved && Array.isArray(saved.entities)) return saved;
-  } catch (e) { /* пусто */ }
-  return newState();
+    const d = JSON.parse(localStorage.getItem(DB_KEY));
+    if (d && d.projects && d.projects[d.current]) return d;
+  } catch (e) { /* нет данных */ }
+  let legacy = null;
+  try { legacy = JSON.parse(localStorage.getItem(LEGACY_KEY)); } catch (e) { /* нет данных */ }
+  const id = newId();
+  const project = {
+    id, name: "Проект 1", created: Date.now(), updated: Date.now(),
+    state: legacy && Array.isArray(legacy.entities) ? legacy : newState(),
+  };
+  return { current: id, projects: { [id]: project } };
 }
 
-function saveState() {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { /* переполнение */ }
+function persist() {
+  const p = db.projects[db.current];
+  p.state = state;
+  p.updated = Date.now();
+  try {
+    localStorage.setItem(DB_KEY, JSON.stringify(db));
+  } catch (e) {
+    setStatus("Не хватает памяти для сохранения", "idle");
+  }
+}
+
+function openProject(id) {
+  persist();
+  db.current = id;
+  state = db.projects[id].state;
+  undoStack = [];
+  persist();
+  refresh();
+}
+
+function createProject() {
+  const name = (prompt("Название нового проекта:", "Проект " + (Object.keys(db.projects).length + 1)) || "").trim();
+  if (!name) return;
+  persist();
+  const id = newId();
+  db.projects[id] = { id, name, created: Date.now(), updated: Date.now(), state: newState() };
+  db.current = id;
+  state = db.projects[id].state;
+  undoStack = [];
+  persist();
+  refresh();
+}
+
+function renameProject(id) {
+  const p = db.projects[id];
+  const name = (prompt("Новое название:", p.name) || "").trim();
+  if (!name) return;
+  p.name = name;
+  persist();
+  refresh();
+}
+
+function deleteProject(id) {
+  if (Object.keys(db.projects).length <= 1) {
+    alert("Нельзя удалить единственный проект. Очистите его вместо этого.");
+    return;
+  }
+  if (!confirm(`Удалить проект «${db.projects[id].name}»?`)) return;
+  delete db.projects[id];
+  if (db.current === id) {
+    const next = Object.values(db.projects).sort((a, b) => b.updated - a.updated)[0];
+    db.current = next.id;
+    state = next.state;
+    undoStack = [];
+  }
+  persist();
+  refresh();
+}
+
+function renderProjects() {
+  const list = $("projList");
+  list.innerHTML = "";
+  Object.values(db.projects)
+    .sort((a, b) => b.updated - a.updated)
+    .forEach((p) => {
+      const li = document.createElement("li");
+      if (p.id === db.current) li.className = "cur";
+      const info = document.createElement("div");
+      info.className = "pinfo";
+      const name = document.createElement("b");
+      name.textContent = p.name;
+      const date = document.createElement("small");
+      date.textContent = new Date(p.updated).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+      info.append(name, date);
+      info.addEventListener("click", () => openProject(p.id));
+      const actions = document.createElement("div");
+      actions.className = "pacts";
+      for (const [label, fn] of [["Переименовать", renameProject], ["Удалить", deleteProject]]) {
+        const b = document.createElement("button");
+        b.textContent = label;
+        b.addEventListener("click", (e) => { e.stopPropagation(); fn(p.id); });
+        actions.appendChild(b);
+      }
+      li.append(info, actions);
+      list.appendChild(li);
+    });
+}
+
+function refresh() {
+  $("projName").textContent = db.projects[db.current].name;
+  renderProjects();
+  draw();
 }
 
 // ---------- команды ----------
 const MUTATING = new Set(["forward", "turn_right", "turn_left", "set_angle", "arc", "circle",
-  "rect", "text", "dim", "new_polyline", "end_polyline", "close", "reset"]);
+  "rect", "text", "dim", "new_polyline", "end_polyline", "close", "reset", "window", "door"]);
 
 function runText(text) {
   if (!text || !text.trim()) return;
@@ -39,18 +139,17 @@ function runText(text) {
     if (undoStack.length) { state = undoStack.pop(); msg = "Отменено."; }
     else msg = "Нечего отменять.";
   } else if (parsed.intent === "save") {
+    persist();
     exportDxf();
     return;
   } else {
     const before = MUTATING.has(parsed.intent) ? snapshot(state) : null;
     const res = execute(state, parsed);
     msg = res.msg;
-    if (before) {
-      if (res.changed) undoStack.push(before);
-    }
+    if (before && res.changed) undoStack.push(before);
   }
   addHistory(msg);
-  saveState();
+  persist();
   draw();
   setStatus(msg, "idle");
 }
@@ -89,13 +188,14 @@ function draw() {
     else if (e.type === "circle") pts.push({ x: e.c.x - e.r, y: e.c.y - e.r }, { x: e.c.x + e.r, y: e.c.y + e.r });
     else if (e.type === "text") pts.push(e.p);
     else if (e.type === "dim") pts.push(e.a, e.b);
+    else if (e.type === "seg") pts.push(e.a, e.b);
   }
 
   if (pts.length < 2) {
     ctx.fillStyle = "#8a8a8a";
     ctx.font = "16px system-ui";
     ctx.textAlign = "center";
-    ctx.fillText("Скажите, например: «прямо 500»", W / 2, H / 2);
+    ctx.fillText("Скажите или напишите, например: «прямо 500»", W / 2, H / 2);
     updateMetrics();
     return;
   }
@@ -137,6 +237,16 @@ function draw() {
         const lenM = Math.hypot(q.x - p.x, q.y - p.y) / 100;
         ctx.fillText(lenM.toFixed(2), (a.x + bq.x) / 2 - (dy / L) * 14, (a.y + bq.y) / 2 + (dx / L) * 14);
       }
+    } else if (e.type === "seg") {
+      const a = tr(e.a), b = tr(e.b);
+      ctx.save();
+      ctx.strokeStyle = e.color === "red" ? "#d32f2f" : "#1e5fd0";
+      ctx.lineWidth = 7;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      ctx.restore();
     } else if (e.type === "circle") {
       const c = tr(e.c);
       ctx.beginPath();
@@ -178,7 +288,7 @@ function updateMetrics() {
 function exportDxf() {
   const dxf = buildDxf(state.entities);
   const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
-  const name = `drawing-${stamp}.dxf`;
+  const name = `${db.projects[db.current].name.replace(/[^\w-]+/g, "_")}-${stamp}.dxf`;
   const blob = new Blob([dxf], { type: "application/dxf" });
   const file = new File([blob], name, { type: "application/dxf" });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -268,17 +378,26 @@ function stopListening() {
 
 // ---------- кнопки и ввод ----------
 $("mic").addEventListener("click", () => (listening ? stopListening() : startListening()));
+$("left90").addEventListener("click", () => runText("налево 90"));
+$("right90").addEventListener("click", () => runText("направо 90"));
 $("undo").addEventListener("click", () => runText("отмена"));
 $("save").addEventListener("click", () => exportDxf());
 $("clear").addEventListener("click", () => {
-  if (!confirm("Очистить чертёж?")) return;
+  if (!confirm("Очистить чертёж в этом проекте?")) return;
   undoStack.push(snapshot(state));
   state = newState();
+  db.projects[db.current].state = state;
   addHistory("Чертёж очищен");
-  saveState();
+  persist();
   draw();
 });
 $("clearHistory").addEventListener("click", () => ($("history").innerHTML = ""));
+$("projBtn").addEventListener("click", () => {
+  renderProjects();
+  $("projPanel").hidden = false;
+});
+$("projClose").addEventListener("click", () => ($("projPanel").hidden = true));
+$("projNew").addEventListener("click", createProject);
 $("form").addEventListener("submit", (e) => {
   e.preventDefault();
   const v = $("input").value;
@@ -292,4 +411,4 @@ if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").catch(() => {});
 }
 setStatus(navigator.onLine ? "Готов к работе" : "Офлайн-режим", "idle");
-draw();
+refresh();

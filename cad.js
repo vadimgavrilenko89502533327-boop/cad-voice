@@ -175,6 +175,14 @@ export function execute(s, parsed) {
       s.entities.push({ type: "dim", a: p1, b: p2, off: DIM_OFFSET, label: f1(len) + " см" });
       return ok(`Размер ${f1(len)} см поставлен.`);
     }
+    case "window":
+    case "door": {
+      const from = { ...s.pos };
+      const np = forward(s, a.dist_cm);
+      const isWindow = parsed.intent === "window";
+      s.entities.push({ type: "seg", a: from, b: np, color: isWindow ? "red" : "blue" });
+      return ok(`${isWindow ? "Окно" : "Дверь"} ${f1(a.dist_cm)} см`);
+    }
     case "new_polyline":
       s.entities.push({ type: "poly", pts: [{ ...s.pos }], bulges: [], closed: false });
       s.active = s.entities.length - 1;
@@ -245,6 +253,9 @@ export function buildDxf(entities) {
         p(10, num(pt.x)); p(20, num(pt.y));
         p(42, num((e.bulges && e.bulges[i]) || 0));
       });
+    } else if (e.type === "seg") {
+      p(0, "LINE"); p(8, "0"); p(62, e.color === "red" ? 1 : 5);
+      p(10, num(e.a.x)); p(20, num(e.a.y)); p(11, num(e.b.x)); p(21, num(e.b.y));
     } else if (e.type === "circle") {
       p(0, "CIRCLE"); p(8, "0");
       p(10, num(e.c.x)); p(20, num(e.c.y)); p(40, num(e.r));

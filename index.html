@@ -14,9 +14,10 @@
     * { box-sizing: border-box; }
     html, body { margin:0; height:100%; background:var(--bg); font-family: -apple-system, system-ui, "Segoe UI", sans-serif; color:var(--dark); }
     body { display:flex; flex-direction:column; padding: env(safe-area-inset-top) 12px env(safe-area-inset-bottom); height:100dvh; }
-    header { display:flex; align-items:center; justify-content:space-between; padding:8px 4px; }
-    h1 { font-size:18px; margin:0; font-weight:700; }
-    #status { font-size:13px; color:#7f7f7f; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 4px; }
+    h1 { font-size:17px; margin:0; font-weight:700; }
+    #projBtn { background:#fff; padding:6px 10px; font-size:14px; max-width:55%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    #status { font-size:13px; color:#7f7f7f; padding:0 4px; min-height:18px; }
     #status.rec { color: var(--red); }
     #status.busy { color:#d68910; }
     #canvas { flex:1; width:100%; min-height:200px; border-radius:14px; background:#fbfbfb; display:block; }
@@ -28,28 +29,46 @@
     #partial { font-size:13px; min-height:16px; margin:0 4px; color:var(--muted); font-style:italic; }
     .hist-head { display:flex; justify-content:space-between; align-items:center; margin:8px 4px 0; }
     .hist-head span { font-weight:700; font-size:14px; }
-    #history { list-style:none; margin:4px 0 0; padding:0; max-height:22vh; overflow:auto; font-size:13px; }
+    #history { list-style:none; margin:4px 0 0; padding:0; max-height:18vh; overflow:auto; font-size:13px; }
     #history li { display:flex; justify-content:space-between; gap:8px; padding:5px 4px; border-bottom:1px solid #e0e0e0; }
     #history time { color:var(--muted); white-space:nowrap; }
     button { font:inherit; border:0; border-radius:12px; background:#e2e2e2; color:var(--dark); padding:10px 12px; cursor:pointer; }
     button:active { background:#d4d4d4; }
     #mic { width:64px; height:64px; border-radius:50%; background:var(--dark); color:#fff; font-size:24px; padding:0; flex:none; }
     #mic.on { background:var(--red); }
+    .turns { display:flex; gap:8px; margin-top:8px; }
+    .turns button { flex:1; background:#fff; border:1px solid #d6d6d6; }
     .bottom { display:flex; align-items:center; gap:8px; margin-top:8px; padding-bottom:6px; }
     .bottom .grow { flex:1; display:flex; gap:8px; }
     .bottom .grow button { flex:1; }
     form { display:flex; gap:8px; margin-top:8px; }
     form input { flex:1; font:inherit; font-size:16px; border:1px solid #d6d6d6; border-radius:12px; padding:10px 12px; background:#fff; }
     form button { background:var(--dark); color:#fff; }
+    .legend { font-size:12px; color:var(--muted); margin:6px 4px 0; }
+    #projPanel { position:fixed; inset:0; background:rgba(0,0,0,.35); display:flex; align-items:flex-end; justify-content:center; z-index:10; }
+    #projPanel[hidden] { display:none; }
+    .sheet { background:var(--bg); width:100%; max-width:560px; max-height:80dvh; border-radius:18px 18px 0 0; padding:16px; display:flex; flex-direction:column; gap:10px; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+    .sheet-head { display:flex; justify-content:space-between; align-items:center; }
+    .sheet-head h2 { margin:0; font-size:17px; }
+    #projList { list-style:none; margin:0; padding:0; overflow:auto; display:flex; flex-direction:column; gap:6px; }
+    #projList li { background:#fff; border-radius:12px; padding:10px 12px; display:flex; flex-direction:column; gap:8px; }
+    #projList li.cur { outline:2px solid var(--dark); }
+    .pinfo { cursor:pointer; display:flex; flex-direction:column; }
+    .pinfo small { color:var(--muted); }
+    .pacts { display:flex; gap:8px; }
+    .pacts button { flex:1; padding:6px; font-size:13px; }
+    #projNew { background:var(--dark); color:#fff; }
   </style>
 </head>
 <body>
   <header>
-    <h1>CAD Voice Assistant</h1>
-    <span id="status">Загрузка...</span>
+    <h1>CAD Voice</h1>
+    <button id="projBtn"><span id="projName">Проект</span> ▾</button>
   </header>
+  <div id="status">Загрузка...</div>
 
   <canvas id="canvas"></canvas>
+  <div class="legend">Красный — окно, синий — дверь</div>
 
   <div class="row">
     <div class="card"><small>Площадь помещения</small><b id="area">0.00 м²</b></div>
@@ -66,16 +85,32 @@
   <ul id="history"></ul>
 
   <form id="form">
-    <input id="input" type="text" placeholder="Команда текстом, например: прямо 500" autocomplete="off" autocapitalize="off">
+    <input id="input" type="text" placeholder="Например: прямо 500, окно 200, дверь 90" autocomplete="off" autocapitalize="off">
     <button type="submit">OK</button>
   </form>
+
+  <div class="turns">
+    <button id="left90">↺ Налево 90°</button>
+    <button id="right90">↻ Направо 90°</button>
+  </div>
 
   <div class="bottom">
     <button id="mic" title="Запись">●</button>
     <div class="grow">
       <button id="undo">Отменить</button>
       <button id="save">DXF</button>
-      <button id="clear">Новый</button>
+      <button id="clear">Очистить</button>
+    </div>
+  </div>
+
+  <div id="projPanel" hidden>
+    <div class="sheet">
+      <div class="sheet-head">
+        <h2>Проекты</h2>
+        <button id="projClose">Закрыть</button>
+      </div>
+      <button id="projNew">+ Новый проект</button>
+      <ul id="projList"></ul>
     </div>
   </div>
 
