@@ -9,6 +9,7 @@ const newId = () => "p" + Date.now().toString(36) + Math.random().toString(36).s
 let db = loadDb();
 let state = db.projects[db.current].state;
 let undoStack = [];
+let redoStack = [];
 let model = null;
 let recognizer = null;
 let audio = null;
@@ -49,6 +50,7 @@ function openProject(id) {
   db.current = id;
   state = db.projects[id].state;
   undoStack = [];
+  redoStack = [];
   persist();
   refresh();
 }
@@ -62,6 +64,7 @@ function createProject() {
   db.current = id;
   state = db.projects[id].state;
   undoStack = [];
+  redoStack = [];
   persist();
   refresh();
 }
@@ -87,6 +90,7 @@ function deleteProject(id) {
     db.current = next.id;
     state = next.state;
     undoStack = [];
+  redoStack = [];
   }
   persist();
   refresh();
@@ -136,8 +140,17 @@ function runText(text) {
   const parsed = parse(text);
   let msg;
   if (parsed.intent === "undo") {
-    if (undoStack.length) { state = undoStack.pop(); msg = "Отменено."; }
-    else msg = "Нечего отменять.";
+    if (undoStack.length) {
+      redoStack.push(snapshot(state));
+      state = undoStack.pop();
+      msg = "Отменено.";
+    } else msg = "Нечего отменять.";
+  } else if (parsed.intent === "redo") {
+    if (redoStack.length) {
+      undoStack.push(snapshot(state));
+      state = redoStack.pop();
+      msg = "Возвращено.";
+    } else msg = "Нечего возвращать.";
   } else if (parsed.intent === "save") {
     persist();
     exportDxf();
@@ -146,7 +159,10 @@ function runText(text) {
     const before = MUTATING.has(parsed.intent) ? snapshot(state) : null;
     const res = execute(state, parsed);
     msg = res.msg;
-    if (before && res.changed) undoStack.push(before);
+    if (before && res.changed) {
+      undoStack.push(before);
+      redoStack = [];
+    }
   }
   addHistory(msg);
   persist();
@@ -284,16 +300,18 @@ function updateMetrics() {
   $("perim").textContent = perim.toFixed(2) + " м";
 }
 
-// ---------- DXF ----------
-function exportDxf() {
-  const dxf = buildDxf(state.entities);
+// ---------- экспорт ----------
+function fileName(ext) {
   const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
-  const name = `${db.projects[db.current].name.replace(/[^\w-]+/g, "_")}-${stamp}.dxf`;
-  const blob = new Blob([dxf], { type: "application/dxf" });
-  const file = new File([blob], name, { type: "application/dxf" });
+  const base = db.projects[db.current].name.replace(/[^\w-]+/g, "") || "drawing";
+  return `${base}-${stamp}.${ext}`;
+}
+
+function shareFile(blob, name, type) {
+  const file = new File([blob], name, { type });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     navigator.share({ files: [file], title: name }).catch(() => {});
-    setStatus("DXF готов: выберите «Сохранить в Файлы»", "idle");
+    setStatus("Готово: выберите «Сохранить в Файлы»", "idle");
   } else {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -303,17 +321,34 @@ function exportDxf() {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
-    setStatus("DXF сохранён: " + name, "idle");
+    setStatus("Сохранено: " + name, "idle");
   }
-  addHistory("Экспорт DXF: " + name);
+  addHistory("Экспорт: " + name);
+}
+
+function exportDxf() {
+  const dxf = buildDxf(state.entities);
+  shareFile(new Blob([dxf], { type: "application/dxf" }), fileName("dxf"), "application/dxf");
+}
+
+function exportPng() {
+  draw();
+  canvas.toBlob((blob) => shareFile(blob, fileName("png"), "image/png"), "image/png");
 }
 
 // ---------- голос (Vosk в браузере, офлайн) ----------
 async function loadModel() {
-  if (model) return;
-  setStatus("Загрузка голосовой модели...", "busy");
+  if (model) return true;
+  setStatus("Проверка голосовой модели...", "busy");
   try {
-    model = await window.Vosk.createModel("model/model.tar.gz");
+    if (!window.Vosk) throw new Error("не загрузилась библиотека vendor/vosk.js");
+    const res = await fetch("model/model.tar.gz");
+    if (!res.ok) throw new Error("файл модели не найден (код " + res.status + ")");
+    if (res.body && res.body.cancel) res.body.cancel();
+    setStatus("Загрузка голосовой модели (до минуты)...", "busy");
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("время ожидания вышло")), 180000));
+    model = await Promise.race([window.Vosk.createModel("model/model.tar.gz"), timeout]);
     recognizer = new model.KaldiRecognizer(16000);
     recognizer.on("result", (msg) => {
       const text = msg.result && msg.result.text;
@@ -328,15 +363,18 @@ async function loadModel() {
       if (p) $("partial").textContent = p;
     });
     setStatus("Голос готов", "idle");
+    return true;
   } catch (e) {
     model = null;
-    setStatus("Не удалось загрузить модель: " + e.message, "idle");
+    recognizer = null;
+    const reason = e && e.message ? e.message : "библиотека не смогла открыть модель (возможно, мало памяти)";
+    setStatus("Модель не загрузилась: " + reason + ". Нажмите ● ещё раз.", "idle");
+    return false;
   }
 }
 
 async function startListening() {
-  await loadModel();
-  if (!recognizer) return;
+  if (!(await loadModel())) return;
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
@@ -383,10 +421,13 @@ $("breakLine").addEventListener("click", () => runText("прервать"));
 $("left90").addEventListener("click", () => runText("налево 90"));
 $("right90").addEventListener("click", () => runText("направо 90"));
 $("undo").addEventListener("click", () => runText("отмена"));
+$("redo").addEventListener("click", () => runText("повтори"));
 $("save").addEventListener("click", () => exportDxf());
+$("png").addEventListener("click", () => exportPng());
 $("clear").addEventListener("click", () => {
   if (!confirm("Очистить чертёж в этом проекте?")) return;
   undoStack.push(snapshot(state));
+  redoStack = [];
   state = newState();
   db.projects[db.current].state = state;
   addHistory("Чертёж очищен");

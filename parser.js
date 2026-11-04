@@ -37,6 +37,7 @@ const FILLERS = new Set([
 ]);
 
 const SIMPLE = [
+  ["повтори", "redo"], ["вернуть", "redo"],
   ["начать", "new_polyline"], ["начни", "new_polyline"],
   ["прервать", "end_polyline"], ["прерви", "end_polyline"],
   ["новая полилиния", "new_polyline"], ["новый контур", "new_polyline"],

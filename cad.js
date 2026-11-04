@@ -277,5 +277,5 @@ export function buildDxf(entities) {
   }
   p(0, "ENDSEC");
   p(0, "EOF");
-  return out.join("\n") + "\n";
+  return out.join("\r\n") + "\r\n";
 }

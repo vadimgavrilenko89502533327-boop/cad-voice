@@ -40,7 +40,7 @@
     .turns button { flex:1; background:#fff; border:1px solid #d6d6d6; }
     .bottom { display:flex; align-items:center; gap:8px; margin-top:8px; padding-bottom:6px; }
     .bottom .grow { flex:1; display:flex; gap:8px; }
-    .bottom .grow button { flex:1; }
+    .bottom .grow button { flex:1; padding:10px 2px; font-size:13px; }
     form { display:flex; gap:8px; margin-top:8px; }
     form input { flex:1; font:inherit; font-size:16px; border:1px solid #d6d6d6; border-radius:12px; padding:10px 12px; background:#fff; }
     form button { background:var(--dark); color:#fff; }
@@ -101,8 +101,10 @@
   <div class="bottom">
     <button id="mic" title="Запись">●</button>
     <div class="grow">
-      <button id="undo">Отменить</button>
+      <button id="undo" title="Назад">↶ Назад</button>
+      <button id="redo" title="Вперёд">↷ Вперёд</button>
       <button id="save">DXF</button>
+      <button id="png">PNG</button>
       <button id="clear">Очистить</button>
     </div>
   </div>
