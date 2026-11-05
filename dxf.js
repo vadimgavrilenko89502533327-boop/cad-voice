@@ -1,7 +1,20 @@
 // Экспорт в DXF формата R12 (AC1009): его читают все версии AutoCAD.
-// Единица чертежа = 1 см ($INSUNITS = 5). Текст кодируется в cp1251 ($DWGCODEPAGE = ANSI_1251).
+// В приложении координаты в сантиметрах, в файле — в метрах ($INSUNITS = 6): 600 см → 6.0.
+// Текст кодируется в cp1251 ($DWGCODEPAGE = ANSI_1251).
+import { polySegments } from "./cad.js";
 
-const num = (v) => Number(v).toFixed(6);
+const K = 0.01;              // сантиметры -> метры
+const TEXT_H = 10 * K;       // высота подписей, 0.10 м
+const LABEL_OFF = 12 * K;    // отступ подписи от линии, 0.12 м
+
+const n = (v) => (Number(v) * K).toFixed(6);
+
+function readableDeg(dx, dy) {
+  let a = Math.atan2(dy, dx);
+  if (a > Math.PI / 2) a -= Math.PI;
+  else if (a < -Math.PI / 2) a += Math.PI;
+  return ((a * 180) / Math.PI).toFixed(4);
+}
 
 export function buildDxf(entities) {
   const out = [];
@@ -9,7 +22,7 @@ export function buildDxf(entities) {
 
   p(0, "SECTION"); p(2, "HEADER");
   p(9, "$ACADVER"); p(1, "AC1009");
-  p(9, "$INSUNITS"); p(70, 5);
+  p(9, "$INSUNITS"); p(70, 6);
   p(9, "$DWGCODEPAGE"); p(3, "ANSI_1251");
   p(0, "ENDSEC");
 
@@ -20,19 +33,29 @@ export function buildDxf(entities) {
       p(10, "0.000000"); p(20, "0.000000"); p(70, e.closed ? 1 : 0);
       e.pts.forEach((pt, i) => {
         p(0, "VERTEX"); p(8, "0");
-        p(10, num(pt.x)); p(20, num(pt.y));
-        p(42, num((e.bulges && e.bulges[i]) || 0));
+        p(10, n(pt.x)); p(20, n(pt.y));
+        p(42, ((e.bulges && e.bulges[i]) || 0).toFixed(6));
       });
       p(0, "SEQEND"); p(8, "0");
+      for (const [a, b] of polySegments(e)) {
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const L = Math.hypot(dx, dy) || 1;
+        const mx = (a.x + b.x) / 2 + (-dy / L) * (LABEL_OFF / K);
+        const my = (a.y + b.y) / 2 + (dx / L) * (LABEL_OFF / K);
+        p(0, "TEXT"); p(8, "0");
+        p(10, n(mx)); p(20, n(my)); p(40, TEXT_H.toFixed(6));
+        p(1, (L / 100).toFixed(2));
+        p(50, readableDeg(dx, dy));
+      }
     } else if (e.type === "seg") {
       p(0, "LINE"); p(8, "0"); p(62, e.color === "red" ? 1 : 5);
-      p(10, num(e.a.x)); p(20, num(e.a.y)); p(11, num(e.b.x)); p(21, num(e.b.y));
+      p(10, n(e.a.x)); p(20, n(e.a.y)); p(11, n(e.b.x)); p(21, n(e.b.y));
     } else if (e.type === "circle") {
       p(0, "CIRCLE"); p(8, "0");
-      p(10, num(e.c.x)); p(20, num(e.c.y)); p(40, num(e.r));
+      p(10, n(e.c.x)); p(20, n(e.c.y)); p(40, n(e.r));
     } else if (e.type === "text") {
       p(0, "TEXT"); p(8, "0");
-      p(10, num(e.p.x)); p(20, num(e.p.y)); p(40, num(e.h));
+      p(10, n(e.p.x)); p(20, n(e.p.y)); p(40, n(e.h));
       p(1, e.s);
     } else if (e.type === "dim") {
       const dx = e.b.x - e.a.x, dy = e.b.y - e.a.y;
@@ -40,10 +63,11 @@ export function buildDxf(entities) {
       const mx = (e.a.x + e.b.x) / 2 + (-dy / L) * e.off;
       const my = (e.a.y + e.b.y) / 2 + (dx / L) * e.off;
       p(0, "LINE"); p(8, "0");
-      p(10, num(e.a.x)); p(20, num(e.a.y)); p(11, num(e.b.x)); p(21, num(e.b.y));
+      p(10, n(e.a.x)); p(20, n(e.a.y)); p(11, n(e.b.x)); p(21, n(e.b.y));
       p(0, "TEXT"); p(8, "0");
-      p(10, num(mx)); p(20, num(my)); p(40, num(3));
-      p(1, e.label);
+      p(10, n(mx)); p(20, n(my)); p(40, TEXT_H.toFixed(6));
+      p(1, (L / 100).toFixed(2));
+      p(50, readableDeg(dx, dy));
     }
   }
   p(0, "ENDSEC");
