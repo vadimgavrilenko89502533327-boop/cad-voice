@@ -680,8 +680,14 @@ function startWebSpeech() {
       runText(text);
     }
   };
+  webRec.onspeechstart = () => setStatus("Слышу речь…", "rec");
+  webRec.onnomatch = () => setStatus("Речь не распознана, повторите", "idle");
   webRec.onerror = (e) => {
-    if (e.error === "no-speech" || e.error === "aborted") return;
+    if (e.error === "no-speech") {
+      setStatus("Не слышу речи. Говорите после нажатия ●", "rec");
+      return;
+    }
+    if (e.error === "aborted") return;
     setStatus(speechErrorText(e.error), "idle");
     if (e.error === "not-allowed" || e.error === "service-not-allowed") stopListening();
   };
