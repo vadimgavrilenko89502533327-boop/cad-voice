@@ -879,7 +879,14 @@ function zoomCenter(ratio) {
 }
 
 // ---------- кнопки ----------
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
 $("mic").addEventListener("click", () => {
+  if (isIOS) {
+    $("input").focus();
+    setStatus("Нажмите микрофон на клавиатуре, скажите команду и нажмите Enter", "busy");
+    return;
+  }
   if (listening) stopListening();
   else if (SpeechRec) startWebSpeech();
   else startVosk();
