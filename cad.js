@@ -150,6 +150,33 @@ export function cutPolyline(e, idx) {
   return [a, b].filter((piece) => piece.pts.length >= 2);
 }
 
+// Удаляет набор сегментов (Set индексов): возвращает части полилинии, заметки переносятся
+export function removeSegments(e, removeSet) {
+  const { pts, bulges, notes } = openPoly(e);
+  const m = pts.length - 1;
+  const runs = [];
+  let start = null;
+  for (let i = 0; i < m; i++) {
+    if (!removeSet.has(i)) {
+      if (start === null) start = i;
+    } else if (start !== null) {
+      runs.push([start, i - 1]);
+      start = null;
+    }
+  }
+  if (start !== null) runs.push([start, m - 1]);
+  return runs
+    .map(([a, b]) => {
+      const piece = { type: "poly", pts: pts.slice(a, b + 2), bulges: bulges.slice(a, b + 1), closed: false, notes: {} };
+      for (const k of Object.keys(notes)) {
+        const i = Number(k);
+        if (i >= a && i <= b) piece.notes[i - a] = notes[k];
+      }
+      return piece;
+    })
+    .filter((piece) => piece.pts.length >= 2);
+}
+
 const ok = (msg, changed = true) => ({ msg, changed });
 const fail = (msg) => ({ msg, changed: false });
 

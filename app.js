@@ -1,5 +1,5 @@
 import { parse } from "./parser.js";
-import { newState, snapshot, execute, metrics, polySegments, sampleSegment, cutPolyline } from "./cad.js";
+import { newState, snapshot, execute, metrics, polySegments, sampleSegment, removeSegments } from "./cad.js";
 import { buildDxf, toCp1251 } from "./dxf.js";
 import { buildPdf } from "./pdf.js";
 
@@ -22,7 +22,8 @@ let lastTr = null;
 let lastInv = null;
 let tool = "idle";          // idle | pickA | pickB
 let pendA = null;           // первая точка линии A–B
-let selected = null;        // выбранный сегмент {ent, seg}
+let sel = [];
+let pivot = null;        // выбранный сегмент {ent, seg}
 
 // ---------- проекты и слои ----------
 function ensureLayers(s) {
@@ -66,7 +67,8 @@ function resetTools() {
   redoStack = [];
   tool = "idle";
   pendA = null;
-  selected = null;
+  pivot = null;
+  sel = [];
 }
 
 function openProject(id) {
@@ -433,18 +435,25 @@ function drawOverlays(tr) {
       ctx.restore();
     });
   }
-  if (selected) {
-    const e = state.entities[selected.ent];
-    const seg = e && e.type === "poly" ? polySegments(e)[selected.seg] : null;
-    if (seg) {
-      const A = tr(seg[0]), B = tr(seg[1]);
-      ctx.strokeStyle = "#f39c12";
-      ctx.lineWidth = 9;
-      ctx.beginPath();
-      ctx.moveTo(A.x, A.y);
-      ctx.lineTo(B.x, B.y);
-      ctx.stroke();
-    }
+  for (const s of sel) {
+    const e = state.entities[s.ent];
+    const seg = e && e.type === "poly" ? polySegments(e)[s.seg] : null;
+    if (!seg) continue;
+    const A = tr(seg[0]), B = tr(seg[1]);
+    ctx.strokeStyle = "#f39c12";
+    ctx.lineWidth = 9;
+    ctx.beginPath();
+    ctx.moveTo(A.x, A.y);
+    ctx.lineTo(B.x, B.y);
+    ctx.stroke();
+  }
+  if (pivot) {
+    const q = tr(pivot);
+    ctx.strokeStyle = "#f39c12";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(q.x, q.y, 9, 0, Math.PI * 2);
+    ctx.stroke();
   }
   if (pendA) {
     const q = tr(pendA);
@@ -553,46 +562,120 @@ function handleTap(p) {
     setStatus("Линия построена.", "idle");
     return;
   }
+  if (tool === "pickPivot") {
+    pivot = snapPoint(p);
+    tool = "idle";
+    draw();
+    openRotate();
+    return;
+  }
   if (pickNode(p)) return;
-  selected = hitSegment(p);
+  const hit = hitSegment(p);
+  if (hit) {
+    const i = sel.findIndex((s) => s.ent === hit.ent && s.seg === hit.seg);
+    if (i >= 0) sel.splice(i, 1);
+    else sel.push(hit);
+  } else {
+    sel = [];
+  }
   updateSelBar();
-  if (selected) setStatus("Сегмент выбран: заметка или удаление.", "idle");
+  if (sel.length) setStatus("Выберите ещё сегменты или нажмите «Удалить», «Заметка», «Повернуть».", "idle");
   draw();
 }
 
 function updateSelBar() {
-  $("selbar").hidden = !selected;
+  $("selbar").hidden = sel.length === 0;
+  $("selCount").textContent = `Выбрано сегментов: ${sel.length}`;
 }
 
 function deleteSelected() {
-  if (!selected) return;
-  const e = state.entities[selected.ent];
-  const pieces = cutPolyline(e, selected.seg).map((piece) => ({ ...piece, layer: e.layer }));
+  if (!sel.length) return;
+  const byEnt = new Map();
+  for (const s of sel) {
+    if (!byEnt.has(s.ent)) byEnt.set(s.ent, new Set());
+    byEnt.get(s.ent).add(s.seg);
+  }
   undoStack.push(snapshot(state));
   redoStack = [];
-  state.entities.splice(selected.ent, 1, ...pieces);
-  if (state.active === selected.ent) state.active = null;
-  else if (state.active !== null && state.active > selected.ent) state.active += pieces.length - 1;
-  selected = null;
+  const ents = [...byEnt.keys()].sort((a, b) => b - a);
+  for (const ent of ents) {
+    const e = state.entities[ent];
+    const pieces = removeSegments(e, byEnt.get(ent)).map((piece) => ({ ...piece, layer: e.layer }));
+    state.entities.splice(ent, 1, ...pieces);
+  }
+  const count = sel.length;
+  state.active = null;
+  sel = [];
   updateSelBar();
-  addHistory("Сегмент удалён");
+  addHistory(`Удалено сегментов: ${count}`);
   persist();
   draw();
 }
 
 function noteSelected() {
-  if (!selected) return;
-  const e = state.entities[selected.ent];
-  const old = (e.notes && e.notes[selected.seg]) || "";
-  const raw = prompt("Заметка к сегменту (например: ширина 0.9 м):", old);
+  if (!sel.length) return;
+  const first = state.entities[sel[0].ent];
+  const old = (first.notes && first.notes[sel[0].seg]) || "";
+  const raw = prompt(`Заметка для выбранных сегментов (${sel.length}):`, old);
   if (raw === null) return;
   const text = raw.trim();
   undoStack.push(snapshot(state));
   redoStack = [];
-  e.notes = e.notes || {};
-  if (text) e.notes[selected.seg] = text;
-  else delete e.notes[selected.seg];
-  addHistory(text ? `Заметка: ${text}` : "Заметка удалена");
+  for (const s of sel) {
+    const e = state.entities[s.ent];
+    e.notes = e.notes || {};
+    if (text) e.notes[s.seg] = text;
+    else delete e.notes[s.seg];
+  }
+  addHistory(text ? `Заметка на ${sel.length} сегм.: ${text}` : "Заметки удалены");
+  persist();
+  draw();
+}
+
+function openRotate() {
+  $("rotDeg").value = "90";
+  $("rotSide").value = "right";
+  $("rotModal").hidden = false;
+}
+
+function cancelRotate() {
+  $("rotModal").hidden = true;
+  pivot = null;
+  tool = "idle";
+  draw();
+}
+
+function applyRotate() {
+  const deg = parseFloat($("rotDeg").value);
+  if (!Number.isFinite(deg) || !sel.length || !pivot) {
+    cancelRotate();
+    return;
+  }
+  const side = $("rotSide").value === "left" ? 1 : -1;
+  const th = (side * deg * Math.PI) / 180;
+  const c = Math.cos(th), s = Math.sin(th);
+  const verts = new Map();
+  for (const { ent, seg } of sel) {
+    const e = state.entities[ent];
+    if (e.type !== "poly") continue;
+    if (!verts.has(ent)) verts.set(ent, new Set());
+    verts.get(ent).add(seg);
+    verts.get(ent).add((seg + 1) % e.pts.length);
+  }
+  undoStack.push(snapshot(state));
+  redoStack = [];
+  for (const [ent, idxs] of verts) {
+    const e = state.entities[ent];
+    for (const i of idxs) {
+      const p = e.pts[i];
+      const dx = p.x - pivot.x, dy = p.y - pivot.y;
+      e.pts[i] = { x: pivot.x + dx * c - dy * s, y: pivot.y + dx * s + dy * c };
+    }
+  }
+  addHistory(`Поворот ${side > 0 ? "налево" : "направо"} на ${deg}° вокруг точки`);
+  $("rotModal").hidden = true;
+  pivot = null;
+  tool = "idle";
   persist();
   draw();
 }
@@ -909,11 +992,20 @@ $("lineBtn").addEventListener("click", () => {
 });
 $("selNote").addEventListener("click", noteSelected);
 $("selDel").addEventListener("click", deleteSelected);
+$("selRot").addEventListener("click", () => {
+  if (!sel.length) return;
+  tool = "pickPivot";
+  pivot = null;
+  setStatus("Коснитесь точки, вокруг которой повернуть выбранные сегменты.", "busy");
+  draw();
+});
 $("selClear").addEventListener("click", () => {
-  selected = null;
+  sel = [];
   updateSelBar();
   draw();
 });
+$("rotOk").addEventListener("click", applyRotate);
+$("rotCancel").addEventListener("click", cancelRotate);
 $("undo").addEventListener("click", () => runText("отмена"));
 $("redo").addEventListener("click", () => runText("повтори"));
 $("save").addEventListener("click", () => exportDxf());

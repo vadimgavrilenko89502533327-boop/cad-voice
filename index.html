@@ -56,6 +56,9 @@
     #selbar span { flex:1; color:#555; }
     #selbar button { padding:8px 10px; font-size:13px; }
     #selDel { background:var(--red); color:#fff; }
+    #rotModal label { display:flex; flex-direction:column; gap:6px; font-size:14px; }
+    #rotModal select, #rotModal input { font:inherit; font-size:16px; padding:10px; border-radius:12px; border:1px solid #d6d6d6; background:#fff; }
+    #rotOk { background:var(--dark); color:#fff; }
     .modal { position:fixed; inset:0; background:rgba(0,0,0,.35); display:flex; align-items:flex-end; justify-content:center; z-index:10; }
     .modal[hidden] { display:none; }
     .sheet { background:var(--bg); width:100%; max-width:560px; max-height:80dvh; border-radius:18px 18px 0 0; padding:16px; display:flex; flex-direction:column; gap:10px; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
@@ -121,8 +124,9 @@
   <div class="legend">Красный — окно, синий — дверь. Касание линии выбирает сегмент.</div>
 
   <div id="selbar" hidden>
-    <span>Сегмент выбран</span>
+    <span id="selCount">Выбрано сегментов: 0</span>
     <button id="selNote">Заметка</button>
+    <button id="selRot">Повернуть</button>
     <button id="selDel">Удалить</button>
     <button id="selClear">✕</button>
   </div>
@@ -189,6 +193,27 @@
       <p style="margin:0;font-size:13px;color:#666">Галочка — показывать слой. Нажмите на название, чтобы сделать его текущим. Новые объекты пойдут на текущий слой.</p>
       <button id="layerNew">+ Новый слой</button>
       <ul id="layerList"></ul>
+    </div>
+  </div>
+
+  <div id="rotModal" class="modal" hidden>
+    <div class="sheet">
+      <div class="sheet-head">
+        <h2>Поворот сегментов</h2>
+      </div>
+      <label>Сторона поворота
+        <select id="rotSide">
+          <option value="right">Направо (по часовой)</option>
+          <option value="left">Налево (против часовой)</option>
+        </select>
+      </label>
+      <label>Угол, градусов
+        <input id="rotDeg" type="number" inputmode="decimal" value="90" min="0" max="360" step="any">
+      </label>
+      <div class="pacts">
+        <button id="rotCancel">Отмена</button>
+        <button id="rotOk">Повернуть</button>
+      </div>
     </div>
   </div>
 
