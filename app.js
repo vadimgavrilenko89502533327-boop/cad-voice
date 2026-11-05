@@ -654,25 +654,44 @@ function applyRotate() {
   const side = $("rotSide").value === "left" ? 1 : -1;
   const th = (side * deg * Math.PI) / 180;
   const c = Math.cos(th), s = Math.sin(th);
-  const verts = new Map();
+  const rot = (p) => {
+    const dx = p.x - pivot.x, dy = p.y - pivot.y;
+    return { x: pivot.x + dx * c - dy * s, y: pivot.y + dx * s + dy * c };
+  };
+
+  const byEnt = new Map();
   for (const { ent, seg } of sel) {
     const e = state.entities[ent];
     if (e.type !== "poly") continue;
-    if (!verts.has(ent)) verts.set(ent, new Set());
-    verts.get(ent).add(seg);
-    verts.get(ent).add((seg + 1) % e.pts.length);
+    if (!byEnt.has(ent)) byEnt.set(ent, new Set());
+    byEnt.get(ent).add(seg);
   }
+
   undoStack.push(snapshot(state));
   redoStack = [];
-  for (const [ent, idxs] of verts) {
+  const ents = [...byEnt.keys()].sort((a, b) => b - a);
+  for (const ent of ents) {
     const e = state.entities[ent];
-    for (const i of idxs) {
-      const p = e.pts[i];
-      const dx = p.x - pivot.x, dy = p.y - pivot.y;
-      e.pts[i] = { x: pivot.x + dx * c - dy * s, y: pivot.y + dx * s + dy * c };
-    }
+    const set = byEnt.get(ent);
+    const segs = polySegments(e);
+    const pieces = removeSegments(e, set).map((piece) => ({ ...piece, layer: e.layer }));
+    const turned = [...set].sort((a, b) => a - b).map((seg) => {
+      const [p, q] = segs[seg];
+      return {
+        type: "poly",
+        pts: [rot(p), rot(q)],
+        bulges: [(e.bulges && e.bulges[seg]) || 0],
+        closed: false,
+        notes: e.notes && e.notes[seg] ? { 0: e.notes[seg] } : {},
+        layer: e.layer,
+      };
+    });
+    state.entities.splice(ent, 1, ...pieces, ...turned);
   }
-  addHistory(`Поворот ${side > 0 ? "налево" : "направо"} на ${deg}° вокруг точки`);
+  state.active = null;
+  addHistory(`Поворот ${side > 0 ? "налево" : "направо"} на ${deg}° сегментов: ${sel.length}`);
+  sel = [];
+  updateSelBar();
   $("rotModal").hidden = true;
   pivot = null;
   tool = "idle";
@@ -962,14 +981,7 @@ function zoomCenter(ratio) {
 }
 
 // ---------- кнопки ----------
-const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-
 $("mic").addEventListener("click", () => {
-  if (isIOS) {
-    $("input").focus();
-    setStatus("Нажмите микрофон на клавиатуре, скажите команду и нажмите Enter", "busy");
-    return;
-  }
   if (listening) stopListening();
   else if (SpeechRec) startWebSpeech();
   else startVosk();
