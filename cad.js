@@ -10,7 +10,7 @@ const norm360 = (a) => ((a % 360) + 360) % 360;
 const f1 = (v) => (Math.abs(v) < 0.05 ? 0 : Number(v)).toFixed(1);
 
 export function newState() {
-  return { pos: { x: 0, y: 0 }, angle: 0, entities: [], active: null };
+  return { pos: { x: 0, y: 0 }, angle: 0, entities: [], active: null, layers: { "0": { visible: true } }, curLayer: "0" };
 }
 
 export function snapshot(s) {
@@ -123,6 +123,31 @@ export function metrics(s) {
   }
   const area = poly.closed ? Math.abs(shoe / 2 + bulgeArea) : 0;
   return { area: area / 10000, perim: perim / 100 };
+}
+
+// Замкнутую полилинию превращаем в открытую (добавляем замыкающий сегмент), индексы сегментов сохраняются
+function openPoly(e) {
+  const pts = e.pts.map((p) => ({ ...p }));
+  const bulges = [...(e.bulges || [])];
+  if (e.closed && pts.length >= 3) {
+    pts.push({ ...pts[0] });
+    bulges.push(0);
+  }
+  return { pts, bulges, notes: { ...(e.notes || {}) } };
+}
+
+// Удаляет сегмент idx: возвращает новые полилинии (одна или две), заметки переносятся
+export function cutPolyline(e, idx) {
+  const { pts, bulges, notes } = openPoly(e);
+  if (idx < 0 || idx >= pts.length - 1) return [];
+  const a = { type: "poly", pts: pts.slice(0, idx + 1), bulges: bulges.slice(0, idx), closed: false, notes: {} };
+  const b = { type: "poly", pts: pts.slice(idx + 1), bulges: bulges.slice(idx + 1), closed: false, notes: {} };
+  for (const k of Object.keys(notes)) {
+    const i = Number(k);
+    if (i < idx) a.notes[i] = notes[k];
+    else if (i > idx) b.notes[i - idx - 1] = notes[k];
+  }
+  return [a, b].filter((piece) => piece.pts.length >= 2);
 }
 
 const ok = (msg, changed = true) => ({ msg, changed });

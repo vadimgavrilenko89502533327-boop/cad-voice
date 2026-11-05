@@ -16,7 +16,9 @@
     body { display:flex; flex-direction:column; padding: env(safe-area-inset-top) 12px env(safe-area-inset-bottom); height:100dvh; }
     header { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 4px; }
     h1 { font-size:17px; margin:0; font-weight:700; }
-    #projBtn { background:#fff; padding:6px 10px; font-size:14px; max-width:55%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .hbtns { display:flex; gap:6px; align-items:center; min-width:0; }
+    #projBtn { background:#fff; padding:6px 10px; font-size:14px; max-width:40vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    #helpBtn, #layersBtn { background:#fff; padding:6px 10px; font-size:14px; }
     #status { font-size:13px; color:#7f7f7f; padding:0 4px; min-height:18px; }
     #status.rec { color: var(--red); }
     #status.busy { color:#d68910; }
@@ -32,41 +34,79 @@
     #partial { font-size:13px; min-height:16px; margin:0 4px; color:var(--muted); font-style:italic; }
     .hist-head { display:flex; justify-content:space-between; align-items:center; margin:8px 4px 0; }
     .hist-head span { font-weight:700; font-size:14px; }
-    #history { list-style:none; margin:4px 0 0; padding:0; max-height:18vh; overflow:auto; font-size:13px; }
+    #history { list-style:none; margin:4px 0 0; padding:0; max-height:14vh; overflow:auto; font-size:13px; }
     #history li { display:flex; justify-content:space-between; gap:8px; padding:5px 4px; border-bottom:1px solid #e0e0e0; }
     #history time { color:var(--muted); white-space:nowrap; }
     button { font:inherit; border:0; border-radius:12px; background:#e2e2e2; color:var(--dark); padding:10px 12px; cursor:pointer; }
     button:active { background:#d4d4d4; }
+    button:disabled { opacity:.45; }
     #mic { width:64px; height:64px; border-radius:50%; background:var(--dark); color:#fff; font-size:24px; padding:0; flex:none; }
     #mic.on { background:var(--red); }
     .turns { display:flex; gap:8px; margin-top:8px; }
     .turns button { flex:1; background:#fff; border:1px solid #d6d6d6; }
     .bottom { display:flex; align-items:center; gap:8px; margin-top:8px; padding-bottom:6px; }
-    .bottom .grow { flex:1; display:flex; gap:8px; }
+    .bottom .grow { flex:1; display:flex; gap:6px; }
     .bottom .grow button { flex:1; padding:10px 2px; font-size:13px; }
     form { display:flex; gap:8px; margin-top:8px; }
     form input { flex:1; font:inherit; font-size:16px; border:1px solid #d6d6d6; border-radius:12px; padding:10px 12px; background:#fff; }
     form button { background:var(--dark); color:#fff; }
     .legend { font-size:12px; color:var(--muted); margin:6px 4px 0; }
-    #projPanel { position:fixed; inset:0; background:rgba(0,0,0,.35); display:flex; align-items:flex-end; justify-content:center; z-index:10; }
-    #projPanel[hidden] { display:none; }
+    #selbar { display:flex; gap:8px; align-items:center; margin-top:8px; background:#fff; border-radius:12px; padding:6px 8px; font-size:13px; }
+    #selbar[hidden] { display:none; }
+    #selbar span { flex:1; color:#555; }
+    #selbar button { padding:8px 10px; font-size:13px; }
+    #selDel { background:var(--red); color:#fff; }
+    .modal { position:fixed; inset:0; background:rgba(0,0,0,.35); display:flex; align-items:flex-end; justify-content:center; z-index:10; }
+    .modal[hidden] { display:none; }
     .sheet { background:var(--bg); width:100%; max-width:560px; max-height:80dvh; border-radius:18px 18px 0 0; padding:16px; display:flex; flex-direction:column; gap:10px; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
     .sheet-head { display:flex; justify-content:space-between; align-items:center; }
     .sheet-head h2 { margin:0; font-size:17px; }
-    #projList { list-style:none; margin:0; padding:0; overflow:auto; display:flex; flex-direction:column; gap:6px; }
-    #projList li { background:#fff; border-radius:12px; padding:10px 12px; display:flex; flex-direction:column; gap:8px; }
-    #projList li.cur { outline:2px solid var(--dark); }
+    #projList, #layerList { list-style:none; margin:0; padding:0; overflow:auto; display:flex; flex-direction:column; gap:6px; }
+    #projList li, #layerList li { background:#fff; border-radius:12px; padding:10px 12px; display:flex; flex-direction:column; gap:8px; }
+    #layerList li { flex-direction:row; align-items:center; }
+    #projList li.cur, #layerList li.cur { outline:2px solid var(--dark); }
     .pinfo { cursor:pointer; display:flex; flex-direction:column; }
     .pinfo small { color:var(--muted); }
     .pacts { display:flex; gap:8px; }
     .pacts button { flex:1; padding:6px; font-size:13px; }
-    #projNew { background:var(--dark); color:#fff; }
+    .lname { flex:1; cursor:pointer; }
+    #projNew, #layerNew { background:var(--dark); color:#fff; }
+    .welcome-card { background:#fff; width:100%; max-width:560px; max-height:92dvh; overflow:auto; border-radius:18px; padding:20px; display:flex; flex-direction:column; gap:12px; margin:auto; }
+    .welcome-card h2 { margin:0; font-size:22px; }
+    .welcome-card ul { margin:0; padding-left:18px; font-size:15px; line-height:1.4; display:flex; flex-direction:column; gap:6px; }
+    .welcome-card #welcomeNext { background:var(--dark); color:#fff; font-size:17px; padding:14px; }
+    #welcome { position:fixed; inset:0; background:var(--bg); display:flex; padding:16px; padding-top: calc(16px + env(safe-area-inset-top)); z-index:20; }
+    #welcome[hidden] { display:none; }
   </style>
 </head>
 <body>
+  <div id="welcome">
+    <div class="welcome-card">
+      <h2>CAD Voice</h2>
+      <p>Помощник для планов помещений: рисуете голосом, текстом или пальцем, а потом экспортируете чертёж в AutoCAD (DXF) или PDF.</p>
+      <ul>
+        <li><b>Линия:</b> скажите или напишите число, например «200» — линия пойдёт в текущем направлении.</li>
+        <li><b>Поворот:</b> кнопки «Налево 90°» и «Направо 90°» задают направление линии.</li>
+        <li><b>Начать / Прервать:</b> начать новую полилинию или закончить текущую.</li>
+        <li><b>Линия A–B:</b> нажмите «Точка», отметьте точку на чертеже, затем «Построить линию» и отметьте вторую точку.</li>
+        <li><b>Окно и дверь:</b> «окно 200» — красный отрезок, «дверь 90» — синий.</li>
+        <li><b>Выбор сегмента:</b> коснитесь линии, появятся «Заметка» (например, ширина 0.9 м) и «Удалить сегмент».</li>
+        <li><b>Продолжить от точки:</b> коснитесь вершины — следующая линия пойдёт от неё.</li>
+        <li><b>Слои:</b> кнопка «Слои» — создание слоёв, скрытие и выбор текущего слоя.</li>
+        <li><b>Экран:</b> сдвиг пальцем, масштаб двумя пальцами или кнопками + / −.</li>
+        <li><b>Экспорт:</b> DXF (для AutoCAD), PDF и PNG (для просмотра на телефоне).</li>
+      </ul>
+      <button id="welcomeNext">Далее</button>
+    </div>
+  </div>
+
   <header>
     <h1>CAD Voice</h1>
-    <button id="projBtn"><span id="projName">Проект</span> ▾</button>
+    <div class="hbtns">
+      <button id="helpBtn" title="Инструкция">?</button>
+      <button id="layersBtn" title="Слои">Слои</button>
+      <button id="projBtn"><span id="projName">Проект</span> ▾</button>
+    </div>
   </header>
   <div id="status">Загрузка...</div>
 
@@ -78,7 +118,14 @@
       <button id="zfit" title="Вписать">⤢</button>
     </div>
   </div>
-  <div class="legend">Красный — окно, синий — дверь</div>
+  <div class="legend">Красный — окно, синий — дверь. Касание линии выбирает сегмент.</div>
+
+  <div id="selbar" hidden>
+    <span>Сегмент выбран</span>
+    <button id="selNote">Заметка</button>
+    <button id="selDel">Удалить</button>
+    <button id="selClear">✕</button>
+  </div>
 
   <div class="row">
     <div class="card"><small>Площадь помещения</small><b id="area">0.00 м²</b></div>
@@ -102,6 +149,8 @@
   <div class="turns">
     <button id="startLine">▶ Начать</button>
     <button id="breakLine">■ Прервать</button>
+    <button id="pointBtn">● Точка</button>
+    <button id="lineBtn" disabled>╱ Построить линию</button>
   </div>
   <div class="turns">
     <button id="left90">↺ Налево 90°</button>
@@ -114,12 +163,13 @@
       <button id="undo" title="Назад">↶ Назад</button>
       <button id="redo" title="Вперёд">↷ Вперёд</button>
       <button id="save">DXF</button>
+      <button id="pdf">PDF</button>
       <button id="png">PNG</button>
       <button id="clear">Очистить</button>
     </div>
   </div>
 
-  <div id="projPanel" hidden>
+  <div id="projPanel" class="modal" hidden>
     <div class="sheet">
       <div class="sheet-head">
         <h2>Проекты</h2>
@@ -127,6 +177,18 @@
       </div>
       <button id="projNew">+ Новый проект</button>
       <ul id="projList"></ul>
+    </div>
+  </div>
+
+  <div id="layerPanel" class="modal" hidden>
+    <div class="sheet">
+      <div class="sheet-head">
+        <h2>Слои</h2>
+        <button id="layerClose">Закрыть</button>
+      </div>
+      <p style="margin:0;font-size:13px;color:#666">Галочка — показывать слой. Нажмите на название, чтобы сделать его текущим. Новые объекты пойдут на текущий слой.</p>
+      <button id="layerNew">+ Новый слой</button>
+      <ul id="layerList"></ul>
     </div>
   </div>
 

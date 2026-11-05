@@ -1,49 +1,53 @@
 import { parse } from "./parser.js";
-import { newState, snapshot, execute, metrics, polySegments, sampleSegment } from "./cad.js";
+import { newState, snapshot, execute, metrics, polySegments, sampleSegment, cutPolyline } from "./cad.js";
 import { buildDxf, toCp1251 } from "./dxf.js";
+import { buildPdf } from "./pdf.js";
 
 const DB_KEY = "cadvoice-projects-v1";
 const LEGACY_KEY = "cadvoice-state-v1";
 const $ = (id) => document.getElementById(id);
 const newId = () => "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
+// ---------- состояние ----------
 let db = loadDb();
 let state = db.projects[db.current].state;
 let undoStack = [];
 let redoStack = [];
-let model = null;
-let recognizer = null;
-let audio = null;
-let listening = false;
 
 const canvas = $("canvas");
 const ctx = canvas.getContext("2d");
 const view = { zoom: 1, panX: 0, panY: 0 };
 let lastNodes = [];
 let lastTr = null;
+let lastInv = null;
+let tool = "idle";          // idle | pickA | pickB
+let pendA = null;           // первая точка линии A–B
+let selected = null;        // выбранный сегмент {ent, seg}
 
-// Угол поворота текста вдоль линии, чтобы текст не был вверх ногами
-function readableAngle(dx, dy) {
-  let a = Math.atan2(dy, dx);
-  if (a > Math.PI / 2) a -= Math.PI;
-  else if (a < -Math.PI / 2) a += Math.PI;
-  return a;
+// ---------- проекты и слои ----------
+function ensureLayers(s) {
+  if (!s.layers) s.layers = {};
+  if (!s.layers["0"]) s.layers["0"] = { visible: true };
+  if (!s.curLayer || !s.layers[s.curLayer]) s.curLayer = "0";
+  return s;
 }
 
-// ---------- проекты (хранятся в памяти телефона/браузера) ----------
 function loadDb() {
   try {
     const d = JSON.parse(localStorage.getItem(DB_KEY));
-    if (d && d.projects && d.projects[d.current]) return d;
+    if (d && d.projects && d.projects[d.current]) {
+      for (const p of Object.values(d.projects)) ensureLayers(p.state);
+      return d;
+    }
   } catch (e) { /* нет данных */ }
   let legacy = null;
   try { legacy = JSON.parse(localStorage.getItem(LEGACY_KEY)); } catch (e) { /* нет данных */ }
   const id = newId();
-  const project = {
-    id, name: "Проект 1", created: Date.now(), updated: Date.now(),
-    state: legacy && Array.isArray(legacy.entities) ? legacy : newState(),
+  const st = legacy && Array.isArray(legacy.entities) ? legacy : newState();
+  return {
+    current: id,
+    projects: { [id]: { id, name: "Проект 1", created: Date.now(), updated: Date.now(), state: ensureLayers(st) } },
   };
-  return { current: id, projects: { [id]: project } };
 }
 
 function persist() {
@@ -57,12 +61,19 @@ function persist() {
   }
 }
 
+function resetTools() {
+  undoStack = [];
+  redoStack = [];
+  tool = "idle";
+  pendA = null;
+  selected = null;
+}
+
 function openProject(id) {
   persist();
   db.current = id;
-  state = db.projects[id].state;
-  undoStack = [];
-  redoStack = [];
+  state = ensureLayers(db.projects[id].state);
+  resetTools();
   persist();
   refresh();
 }
@@ -75,8 +86,7 @@ function createProject() {
   db.projects[id] = { id, name, created: Date.now(), updated: Date.now(), state: newState() };
   db.current = id;
   state = db.projects[id].state;
-  undoStack = [];
-  redoStack = [];
+  resetTools();
   persist();
   refresh();
 }
@@ -100,9 +110,8 @@ function deleteProject(id) {
   if (db.current === id) {
     const next = Object.values(db.projects).sort((a, b) => b.updated - a.updated)[0];
     db.current = next.id;
-    state = next.state;
-    undoStack = [];
-  redoStack = [];
+    state = ensureLayers(next.state);
+    resetTools();
   }
   persist();
   refresh();
@@ -137,6 +146,49 @@ function renderProjects() {
     });
 }
 
+function renderLayers() {
+  const list = $("layerList");
+  list.innerHTML = "";
+  for (const [name, info] of Object.entries(state.layers)) {
+    const li = document.createElement("li");
+    if (name === state.curLayer) li.className = "cur";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = info.visible;
+    cb.title = "Показывать слой";
+    cb.addEventListener("change", () => {
+      state.layers[name].visible = cb.checked;
+      persist();
+      draw();
+    });
+    const label = document.createElement("span");
+    label.className = "lname";
+    label.textContent = name + (name === state.curLayer ? "  (текущий)" : "");
+    label.addEventListener("click", () => {
+      state.curLayer = name;
+      persist();
+      renderLayers();
+      setStatus(`Текущий слой: ${name}`, "idle");
+    });
+    li.append(cb, label);
+    list.appendChild(li);
+  }
+}
+
+function addLayer() {
+  const name = (prompt("Название слоя (например: Стены, Окна, Мебель):", "") || "").trim();
+  if (!name) return;
+  if (state.layers[name]) {
+    alert("Слой с таким названием уже есть.");
+    return;
+  }
+  state.layers[name] = { visible: true };
+  state.curLayer = name;
+  persist();
+  renderLayers();
+  setStatus(`Создан слой «${name}». Новые объекты пойдут на него.`, "idle");
+}
+
 function refresh() {
   $("projName").textContent = db.projects[db.current].name;
   renderProjects();
@@ -169,7 +221,11 @@ function runText(text) {
     return;
   } else {
     const before = MUTATING.has(parsed.intent) ? snapshot(state) : null;
+    const countBefore = state.entities.length;
     const res = execute(state, parsed);
+    for (let i = countBefore; i < state.entities.length; i++) {
+      if (!state.entities[i].layer) state.entities[i].layer = state.curLayer;
+    }
     msg = res.msg;
     if (before && res.changed) {
       undoStack.push(before);
@@ -199,6 +255,16 @@ function addHistory(msg) {
   while (list.children.length > 30) list.removeChild(list.lastChild);
 }
 
+// Угол поворота текста вдоль линии, чтобы текст не был вверх ногами
+function readableAngle(dx, dy) {
+  let a = Math.atan2(dy, dx);
+  if (a > Math.PI / 2) a -= Math.PI;
+  else if (a < -Math.PI / 2) a += Math.PI;
+  return a;
+}
+
+const isShown = (e) => ((state.layers[e.layer || "0"]) || { visible: true }).visible;
+
 // ---------- рисование ----------
 function draw() {
   const dpr = window.devicePixelRatio || 1;
@@ -210,28 +276,25 @@ function draw() {
   ctx.fillStyle = "#fbfbfb";
   ctx.fillRect(0, 0, W, H);
 
+  const shown = state.entities.filter(isShown);
   const pts = [];
-  for (const e of state.entities) {
-    if (e.type === "poly") pts.push(...e.pts);
+  const nodes = [];
+  for (const e of shown) {
+    if (e.type === "poly") { pts.push(...e.pts); nodes.push(...e.pts); }
     else if (e.type === "circle") pts.push({ x: e.c.x - e.r, y: e.c.y - e.r }, { x: e.c.x + e.r, y: e.c.y + e.r });
     else if (e.type === "text") pts.push(e.p);
     else if (e.type === "dim") pts.push(e.a, e.b);
-    else if (e.type === "seg") pts.push(e.a, e.b);
-  }
-
-  const nodes = [];
-  for (const e of state.entities) {
-    if (e.type === "poly") nodes.push(...e.pts);
-    else if (e.type === "seg") nodes.push(e.a, e.b);
+    else if (e.type === "seg") { pts.push(e.a, e.b); nodes.push(e.a, e.b); }
   }
   lastNodes = nodes;
 
   if (pts.length < 2) {
     lastTr = null;
+    lastInv = (p) => ({ x: (p.x - W / 2 - view.panX) / view.zoom, y: -(p.y - (H - 30) / 2 - view.panY) / view.zoom });
     ctx.fillStyle = "#8a8a8a";
     ctx.font = "16px system-ui";
     ctx.textAlign = "center";
-    ctx.fillText("Скажите или напишите, например: «прямо 500»", W / 2, H / 2);
+    ctx.fillText("Скажите или напишите, например: «200»", W / 2, H / 2);
     updateMetrics();
     return;
   }
@@ -247,6 +310,11 @@ function draw() {
     x: W / 2 + view.panX + (p.x - cx) * s,
     y: (H - 30) / 2 + view.panY - (p.y - cy) * s,
   });
+  lastTr = tr;
+  lastInv = (p) => ({
+    x: cx + (p.x - (W / 2 + view.panX)) / s,
+    y: cy - (p.y - ((H - 30) / 2 + view.panY)) / s,
+  });
 
   ctx.strokeStyle = "#1c1c1c";
   ctx.fillStyle = "#1c1c1c";
@@ -256,7 +324,7 @@ function draw() {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
 
-  for (const e of state.entities) {
+  for (const e of shown) {
     if (e.type === "poly") {
       const segs = polySegments(e);
       if (!segs.length) continue;
@@ -273,7 +341,6 @@ function draw() {
       for (const [p, q] of segs) {
         const a = tr(p), bq = tr(q);
         const dx = bq.x - a.x, dy = bq.y - a.y;
-        const L = Math.hypot(dx, dy) || 1;
         const lenM = Math.hypot(q.x - p.x, q.y - p.y) / 100;
         ctx.save();
         ctx.translate((a.x + bq.x) / 2, (a.y + bq.y) / 2);
@@ -316,7 +383,6 @@ function draw() {
     }
   }
 
-  lastTr = tr;
   ctx.save();
   ctx.fillStyle = "#ffffff";
   ctx.strokeStyle = "#8a8a8a";
@@ -335,6 +401,8 @@ function draw() {
   ctx.fill();
   ctx.restore();
 
+  drawOverlays(tr);
+
   const ox = 30, oy = H - 30;
   ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ox, oy - 50); ctx.stroke();
@@ -345,10 +413,188 @@ function draw() {
   updateMetrics();
 }
 
+// Заметки к сегментам, выбранный сегмент, первая точка линии A–B
+function drawOverlays(tr) {
+  ctx.save();
+  ctx.fillStyle = "#b9770e";
+  ctx.font = "italic 13px system-ui";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  for (const e of state.entities) {
+    if (e.type !== "poly" || !e.notes || !isShown(e)) continue;
+    polySegments(e).forEach(([a, b], i) => {
+      const note = e.notes[i];
+      if (!note) return;
+      const A = tr(a), B = tr(b);
+      ctx.save();
+      ctx.translate((A.x + B.x) / 2, (A.y + B.y) / 2);
+      ctx.rotate(readableAngle(B.x - A.x, B.y - A.y));
+      ctx.fillText(note, 0, 14);
+      ctx.restore();
+    });
+  }
+  if (selected) {
+    const e = state.entities[selected.ent];
+    const seg = e && e.type === "poly" ? polySegments(e)[selected.seg] : null;
+    if (seg) {
+      const A = tr(seg[0]), B = tr(seg[1]);
+      ctx.strokeStyle = "#f39c12";
+      ctx.lineWidth = 9;
+      ctx.beginPath();
+      ctx.moveTo(A.x, A.y);
+      ctx.lineTo(B.x, B.y);
+      ctx.stroke();
+    }
+  }
+  if (pendA) {
+    const q = tr(pendA);
+    ctx.strokeStyle = "#1e5fd0";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(q.x - 7, q.y - 7); ctx.lineTo(q.x + 7, q.y + 7);
+    ctx.moveTo(q.x + 7, q.y - 7); ctx.lineTo(q.x - 7, q.y + 7);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function updateMetrics() {
   const { area, perim } = metrics(state);
   $("area").textContent = area.toFixed(2) + " м²";
   $("perim").textContent = perim.toFixed(2) + " м";
+}
+
+// ---------- касания: точка, линия A–B, выбор сегмента, продолжение от узла ----------
+function nodeAt(p, radius = 24) {
+  if (!lastTr) return null;
+  let best = null, bestD = radius;
+  for (const n of lastNodes) {
+    const q = lastTr(n);
+    const d = Math.hypot(q.x - p.x, q.y - p.y);
+    if (d < bestD) { bestD = d; best = n; }
+  }
+  return best;
+}
+
+function snapPoint(p) {
+  const node = nodeAt(p);
+  if (node) return { x: node.x, y: node.y };
+  const w = lastInv(p);
+  return { x: w.x, y: w.y };
+}
+
+function distToSeg(p, A, B) {
+  const dx = B.x - A.x, dy = B.y - A.y;
+  const L2 = dx * dx + dy * dy || 1;
+  let t = ((p.x - A.x) * dx + (p.y - A.y) * dy) / L2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p.x - (A.x + t * dx), p.y - (A.y + t * dy));
+}
+
+function hitSegment(p) {
+  if (!lastTr) return null;
+  let best = null, bestD = 10;
+  state.entities.forEach((e, ent) => {
+    if (e.type !== "poly" || !isShown(e)) return;
+    polySegments(e).forEach(([a, b], seg) => {
+      const d = distToSeg(p, lastTr(a), lastTr(b));
+      if (d < bestD) { bestD = d; best = { ent, seg }; }
+    });
+  });
+  return best;
+}
+
+function pickNode(p) {
+  const best = nodeAt(p);
+  if (!best) return false;
+  undoStack.push(snapshot(state));
+  redoStack = [];
+  state.pos = { x: best.x, y: best.y };
+  state.active = null;
+  addHistory(`Продолжение от точки (${best.x.toFixed(0)}, ${best.y.toFixed(0)})`);
+  persist();
+  draw();
+  setStatus("Точка выбрана. Следующая линия пойдёт отсюда.", "idle");
+  return true;
+}
+
+function createLine(a, b) {
+  undoStack.push(snapshot(state));
+  redoStack = [];
+  state.entities.push({
+    type: "poly",
+    pts: [{ x: a.x, y: a.y }, { x: b.x, y: b.y }],
+    bulges: [0],
+    closed: false,
+    notes: {},
+    layer: state.curLayer,
+  });
+  const L = Math.hypot(b.x - a.x, b.y - a.y) / 100;
+  addHistory(`Линия ${L.toFixed(2)} м (от точки до точки)`);
+  persist();
+  draw();
+}
+
+function handleTap(p) {
+  if (tool === "pickA") {
+    pendA = snapPoint(p);
+    tool = "idle";
+    $("lineBtn").disabled = false;
+    setStatus("Точка указана. Нажмите «Построить линию» и отметьте вторую точку.", "idle");
+    draw();
+    return;
+  }
+  if (tool === "pickB") {
+    const b = snapPoint(p);
+    createLine(pendA, b);
+    pendA = null;
+    tool = "idle";
+    $("lineBtn").disabled = true;
+    setStatus("Линия построена.", "idle");
+    return;
+  }
+  if (pickNode(p)) return;
+  selected = hitSegment(p);
+  updateSelBar();
+  if (selected) setStatus("Сегмент выбран: заметка или удаление.", "idle");
+  draw();
+}
+
+function updateSelBar() {
+  $("selbar").hidden = !selected;
+}
+
+function deleteSelected() {
+  if (!selected) return;
+  const e = state.entities[selected.ent];
+  const pieces = cutPolyline(e, selected.seg).map((piece) => ({ ...piece, layer: e.layer }));
+  undoStack.push(snapshot(state));
+  redoStack = [];
+  state.entities.splice(selected.ent, 1, ...pieces);
+  if (state.active === selected.ent) state.active = null;
+  else if (state.active !== null && state.active > selected.ent) state.active += pieces.length - 1;
+  selected = null;
+  updateSelBar();
+  addHistory("Сегмент удалён");
+  persist();
+  draw();
+}
+
+function noteSelected() {
+  if (!selected) return;
+  const e = state.entities[selected.ent];
+  const old = (e.notes && e.notes[selected.seg]) || "";
+  const raw = prompt("Заметка к сегменту (например: ширина 0.9 м):", old);
+  if (raw === null) return;
+  const text = raw.trim();
+  undoStack.push(snapshot(state));
+  redoStack = [];
+  e.notes = e.notes || {};
+  if (text) e.notes[selected.seg] = text;
+  else delete e.notes[selected.seg];
+  addHistory(text ? `Заметка: ${text}` : "Заметка удалена");
+  persist();
+  draw();
 }
 
 // ---------- экспорт ----------
@@ -378,7 +624,7 @@ function shareFile(blob, name, type) {
 }
 
 function exportDxf() {
-  const dxf = buildDxf(state.entities);
+  const dxf = buildDxf(state.entities, state.layers);
   shareFile(new Blob([toCp1251(dxf)], { type: "application/dxf" }), fileName("dxf"), "application/dxf");
 }
 
@@ -387,75 +633,23 @@ function exportPng() {
   canvas.toBlob((blob) => shareFile(blob, fileName("png"), "image/png"), "image/png");
 }
 
-// ---------- голос (Vosk в браузере, офлайн) ----------
-async function loadModel() {
-  if (model) return true;
-  setStatus("Проверка голосовой модели...", "busy");
-  try {
-    if (!window.Vosk) throw new Error("не загрузилась библиотека vendor/vosk.js");
-    const res = await fetch("model/model.tar.gz");
-    if (!res.ok) throw new Error("файл модели не найден (код " + res.status + ")");
-    if (res.body && res.body.cancel) res.body.cancel();
-    setStatus("Загрузка голосовой модели (до минуты)...", "busy");
-    const timeout = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("время ожидания вышло")), 180000));
-    model = await Promise.race([window.Vosk.createModel("model/model.tar.gz"), timeout]);
-    recognizer = new model.KaldiRecognizer(16000);
-    recognizer.on("result", (msg) => {
-      const text = msg.result && msg.result.text;
-      $("partial").textContent = "";
-      if (text) {
-        $("heard").textContent = "Вы сказали: " + text;
-        runText(text);
-      }
-    });
-    recognizer.on("partialresult", (msg) => {
-      const p = msg.result && msg.result.partial;
-      if (p) $("partial").textContent = p;
-    });
-    setStatus("Голос готов", "idle");
-    return true;
-  } catch (e) {
-    model = null;
-    recognizer = null;
-    const reason = e && e.message ? e.message : "библиотека не смогла открыть модель (возможно, мало памяти)";
-    setStatus("Модель не загрузилась: " + reason + ". Нажмите ● ещё раз.", "idle");
-    return false;
-  }
+function exportPdf() {
+  draw();
+  canvas.toBlob(async (jpg) => {
+    const bytes = buildPdf(new Uint8Array(await jpg.arrayBuffer()), canvas.width, canvas.height);
+    shareFile(new Blob([bytes], { type: "application/pdf" }), fileName("pdf"), "application/pdf");
+  }, "image/jpeg", 0.92);
 }
 
-async function startListening() {
-  if (!(await loadModel())) return;
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
-    });
-    const ac = new (window.AudioContext || window.webkitAudioContext)();
-    await ac.resume();
-    const src = ac.createMediaStreamSource(stream);
-    const proc = ac.createScriptProcessor(4096, 1, 1);
-    const mute = ac.createGain();
-    mute.gain.value = 0;
-    proc.onaudioprocess = (e) => {
-      try { recognizer.acceptWaveform(e.inputBuffer); } catch (err) { /* пропускаем кадр */ }
-    };
-    src.connect(proc);
-    proc.connect(mute);
-    mute.connect(ac.destination);
-    audio = { stream, ac, proc, src, mute };
-    listening = true;
-    $("mic").classList.add("on");
-    setStatus("Слушаю", "rec");
-  } catch (e) {
-    setStatus("Нет доступа к микрофону: " + e.message, "idle");
-  }
-}
-
-// ---------- голос через Safari (Web Speech API) ----------
+// ---------- голос: Safari (основной) и Vosk (офлайн, запасной) ----------
 const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+let listening = false;
 let webRec = null;
 let lastStart = 0;
 let quickEnds = 0;
+let model = null;
+let recognizer = null;
+let audio = null;
 
 function speechErrorText(code) {
   if (code === "not-allowed" || code === "service-not-allowed")
@@ -524,6 +718,69 @@ function startWebSpeech() {
   setStatus("Слушаю", "rec");
 }
 
+async function loadModel() {
+  if (model) return true;
+  setStatus("Проверка голосовой модели...", "busy");
+  try {
+    if (!window.Vosk) throw new Error("не загрузилась библиотека vendor/vosk.js");
+    const res = await fetch("model/model.tar.gz");
+    if (!res.ok) throw new Error("файл модели не найден (код " + res.status + ")");
+    if (res.body && res.body.cancel) res.body.cancel();
+    setStatus("Загрузка голосовой модели (до минуты)...", "busy");
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("время ожидания вышло")), 180000));
+    model = await Promise.race([window.Vosk.createModel("model/model.tar.gz"), timeout]);
+    recognizer = new model.KaldiRecognizer(16000);
+    recognizer.on("result", (msg) => {
+      const text = msg.result && msg.result.text;
+      $("partial").textContent = "";
+      if (text) {
+        $("heard").textContent = "Вы сказали: " + text;
+        runText(text);
+      }
+    });
+    recognizer.on("partialresult", (msg) => {
+      const p = msg.result && msg.result.partial;
+      if (p) $("partial").textContent = p;
+    });
+    setStatus("Голос готов", "idle");
+    return true;
+  } catch (e) {
+    model = null;
+    recognizer = null;
+    const reason = e && e.message ? e.message : "библиотека не смогла открыть модель (возможно, мало памяти)";
+    setStatus("Модель не загрузилась: " + reason + ". Нажмите ● ещё раз.", "idle");
+    return false;
+  }
+}
+
+async function startVosk() {
+  if (!(await loadModel())) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
+    });
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    await ac.resume();
+    const src = ac.createMediaStreamSource(stream);
+    const proc = ac.createScriptProcessor(4096, 1, 1);
+    const mute = ac.createGain();
+    mute.gain.value = 0;
+    proc.onaudioprocess = (e) => {
+      try { recognizer.acceptWaveform(e.inputBuffer); } catch (err) { /* пропускаем кадр */ }
+    };
+    src.connect(proc);
+    proc.connect(mute);
+    mute.connect(ac.destination);
+    audio = { stream, ac, proc, src, mute };
+    listening = true;
+    $("mic").classList.add("on");
+    setStatus("Слушаю", "rec");
+  } catch (e) {
+    setStatus("Нет доступа к микрофону: " + e.message, "idle");
+  }
+}
+
 function stopListening() {
   if (webRec) {
     const r = webRec;
@@ -544,9 +801,10 @@ function stopListening() {
   setStatus("Готов к работе", "idle");
 }
 
-// ---------- сдвиг и масштаб области чертежа ----------
+// ---------- сдвиг и масштаб ----------
 const pointers = new Map();
 let pinchDist = 0;
+let tap = null;
 
 function canvasPoint(e) {
   const r = canvas.getBoundingClientRect();
@@ -563,10 +821,8 @@ function zoomAt(px, py, ratio) {
   view.zoom = nz;
 }
 
-let tap = null;
-
 canvas.addEventListener("pointerdown", (e) => {
-  canvas.setPointerCapture(e.pointerId);
+  try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* нет активного указателя */ }
   const p = canvasPoint(e);
   pointers.set(e.pointerId, p);
   pinchDist = 0;
@@ -592,29 +848,10 @@ canvas.addEventListener("pointermove", (e) => {
   draw();
 });
 
-function pickNode(p) {
-  if (!lastTr) return;
-  let best = null, bestD = 24;
-  for (const n of lastNodes) {
-    const q = lastTr(n);
-    const d = Math.hypot(q.x - p.x, q.y - p.y);
-    if (d < bestD) { bestD = d; best = n; }
-  }
-  if (!best) return;
-  undoStack.push(snapshot(state));
-  redoStack = [];
-  state.pos = { x: best.x, y: best.y };
-  state.active = null;
-  addHistory(`Продолжение от точки (${best.x.toFixed(0)}, ${best.y.toFixed(0)})`);
-  persist();
-  draw();
-  setStatus("Точка выбрана. Следующая линия пойдёт отсюда.", "idle");
-}
-
 function endPointer(e) {
   const wasSingle = pointers.size === 1 && pointers.has(e.pointerId);
   if (e.type === "pointerup" && tap && wasSingle && Date.now() - tap.t < 500) {
-    pickNode(canvasPoint(e));
+    handleTap(canvasPoint(e));
   }
   pointers.delete(e.pointerId);
   pinchDist = 0;
@@ -635,31 +872,48 @@ function zoomCenter(ratio) {
   draw();
 }
 
-// ---------- кнопки и ввод ----------
-$("zin").addEventListener("click", () => zoomCenter(1.25));
-$("zout").addEventListener("click", () => zoomCenter(1 / 1.25));
-$("zfit").addEventListener("click", () => {
-  view.zoom = 1; view.panX = 0; view.panY = 0;
-  draw();
-});
+// ---------- кнопки ----------
 $("mic").addEventListener("click", () => {
   if (listening) stopListening();
   else if (SpeechRec) startWebSpeech();
-  else startListening();
+  else startVosk();
 });
 $("startLine").addEventListener("click", () => runText("начать"));
 $("breakLine").addEventListener("click", () => runText("прервать"));
 $("left90").addEventListener("click", () => runText("налево 90"));
 $("right90").addEventListener("click", () => runText("направо 90"));
+$("pointBtn").addEventListener("click", () => {
+  tool = "pickA";
+  pendA = null;
+  $("lineBtn").disabled = true;
+  setStatus("Отметьте первую точку на чертеже.", "busy");
+  draw();
+});
+$("lineBtn").addEventListener("click", () => {
+  if (!pendA) return;
+  tool = "pickB";
+  setStatus("Отметьте вторую точку — линия соединит их.", "busy");
+});
+$("selNote").addEventListener("click", noteSelected);
+$("selDel").addEventListener("click", deleteSelected);
+$("selClear").addEventListener("click", () => {
+  selected = null;
+  updateSelBar();
+  draw();
+});
 $("undo").addEventListener("click", () => runText("отмена"));
 $("redo").addEventListener("click", () => runText("повтори"));
 $("save").addEventListener("click", () => exportDxf());
+$("pdf").addEventListener("click", () => exportPdf());
 $("png").addEventListener("click", () => exportPng());
 $("clear").addEventListener("click", () => {
   if (!confirm("Очистить чертёж в этом проекте?")) return;
   undoStack.push(snapshot(state));
   redoStack = [];
+  const layers = state.layers, curLayer = state.curLayer;
   state = newState();
+  state.layers = layers;
+  state.curLayer = curLayer;
   db.projects[db.current].state = state;
   addHistory("Чертёж очищен");
   persist();
@@ -672,6 +926,20 @@ $("projBtn").addEventListener("click", () => {
 });
 $("projClose").addEventListener("click", () => ($("projPanel").hidden = true));
 $("projNew").addEventListener("click", createProject);
+$("layersBtn").addEventListener("click", () => {
+  renderLayers();
+  $("layerPanel").hidden = false;
+});
+$("layerClose").addEventListener("click", () => ($("layerPanel").hidden = true));
+$("layerNew").addEventListener("click", addLayer);
+$("helpBtn").addEventListener("click", () => ($("welcome").hidden = false));
+$("welcomeNext").addEventListener("click", () => ($("welcome").hidden = true));
+$("zin").addEventListener("click", () => zoomCenter(1.25));
+$("zout").addEventListener("click", () => zoomCenter(1 / 1.25));
+$("zfit").addEventListener("click", () => {
+  view.zoom = 1; view.panX = 0; view.panY = 0;
+  draw();
+});
 $("form").addEventListener("submit", (e) => {
   e.preventDefault();
   const v = $("input").value;
