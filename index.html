@@ -96,7 +96,18 @@
     body.focus #focusBar { display:flex; }
     body.focus header, body.focus #status, body.focus .legend, body.focus .row, body.focus #heard, body.focus #partial,
     body.focus .hist-head, body.focus #history, body.focus form, body.focus .turns, body.focus .ruler, body.focus .bottom,
-    body.focus #welcome, body.focus #selbar { display:none !important; }
+    body.focus #welcome { display:none !important; }
+    body.focus #selbar, body.focus #selbar[hidden] {
+      display:flex !important; position:fixed; left:8px; right:8px; bottom:62px; z-index:16;
+      flex-wrap:wrap; justify-content:center; gap:6px; padding:8px; margin:0;
+      background:#fff; border-radius:16px; box-shadow:0 6px 24px rgba(0,0,0,.18);
+      transition: transform .25s ease, opacity .25s ease;
+    }
+    body.focus #selbar span { flex-basis:100%; text-align:center; font-size:12px; }
+    body.focus #selbar button { padding:9px 10px; font-size:13px; }
+    body.focus #selbar[hidden] { transform:translateY(160%); opacity:0; pointer-events:none; }
+    body.focus #selbar:not([hidden]) { transform:translateY(0); opacity:1; }
+    #focusBar button[title] { min-width:44px; }
     body.focus { padding: env(safe-area-inset-top) 6px 0; }
     body.focus .canvas-wrap { margin-bottom:52px; }
   </style>
@@ -362,7 +373,8 @@
     <button id="focusRuler">📏</button>
     <button id="focusMeasure">Измерять</button>
     <span id="focusInfo"></span>
-    <button id="focusUndo">↶</button>
+    <button id="focusUndo" title="Назад">↶</button>
+    <button id="focusRedo" title="Вперёд">↷</button>
   </div>
 
   <script src="vendor/vosk.js"></script>

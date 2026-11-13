@@ -1361,6 +1361,7 @@ $("focusExit").addEventListener("click", () => setFocus(false));
 $("focusRuler").addEventListener("click", () => $("rulerConnect").click());
 $("focusMeasure").addEventListener("click", () => $("rulerMeasure").click());
 $("focusUndo").addEventListener("click", () => runText("отмена"));
+$("focusRedo").addEventListener("click", () => runText("повтори"));
 
 function mirror(fromId, toId) {
   const from = $(fromId);
