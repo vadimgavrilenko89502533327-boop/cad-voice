@@ -1,6 +1,6 @@
-﻿// РћС„Р»Р°Р№РЅ-РєСЌС€: РїСЂРё РїРµСЂРІРѕРј РѕС‚РєСЂС‹С‚РёРё (СЃ СЃРµС‚СЊСЋ) СЃРєР°С‡РёРІР°РµС‚ РІСЃС‘ РїСЂРёР»РѕР¶РµРЅРёРµ Рё РјРѕРґРµР»СЊ,
-// РґР°Р»СЊС€Рµ СЂР°Р±РѕС‚Р°РµС‚ Р±РµР· РёРЅС‚РµСЂРЅРµС‚Р°.
-const CACHE = "cad-voice-v19";
+﻿// Офлайн-кэш. Файлы приложения берутся из сети, если она есть (чтобы обновления
+// сразу попадали на телефон), иначе из кэша. Модель распознавания берётся из кэша.
+const CACHE = "cad-voice-v20";
 const ASSETS = [
   "./",
   "index.html",
@@ -29,7 +29,20 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  const url = new URL(event.request.url);
+  if (url.pathname.includes("/model/")) {
+    event.respondWith(caches.match(event.request, { ignoreSearch: true }).then((hit) => hit || fetch(event.request)));
+    return;
+  }
   event.respondWith(
-    caches.match(event.request, { ignoreSearch: true }).then((hit) => hit || fetch(event.request))
+    fetch(event.request)
+      .then((res) => {
+        if (res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(event.request, copy));
+        }
+        return res;
+      })
+      .catch(() => caches.match(event.request, { ignoreSearch: true }))
   );
 });
