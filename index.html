@@ -73,7 +73,13 @@
     .pacts { display:flex; gap:8px; }
     .pacts button { flex:1; padding:6px; font-size:13px; }
     .lname { flex:1; cursor:pointer; }
-    #projNew, #layerNew { background:var(--dark); color:#fff; }
+    #projNew, #layerNew, #spaceNew, #projImport { background:var(--dark); color:#fff; }
+    #projImport { margin-top:0; }
+    #spaceBtn { background:#fff; padding:6px 10px; font-size:14px; max-width:28vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    #spaceList { list-style:none; margin:0; padding:0; overflow:auto; display:flex; flex-direction:column; gap:6px; }
+    #spaceList li { background:#fff; border-radius:12px; padding:10px 12px; display:flex; align-items:center; gap:8px; }
+    #spaceList li.cur { outline:2px solid var(--dark); }
+    #spaceList li button { padding:6px 8px; font-size:13px; }
     .welcome-card { background:#fff; width:100%; max-width:560px; max-height:92dvh; overflow:auto; border-radius:18px; padding:20px; display:flex; flex-direction:column; gap:12px; margin:auto; }
     .welcome-card h2 { margin:0; font-size:22px; }
     .welcome-card ul { margin:0; padding-left:18px; font-size:15px; line-height:1.4; display:flex; flex-direction:column; gap:6px; }
@@ -100,6 +106,7 @@
       <ul>
         <li><b>Число</b> (например «200», «2 метра», «150 см») — линия в текущем направлении.</li>
         <li><b>Направо / налево 90</b> или кнопки поворота — меняют направление. Линия не прерывается.</li>
+        <li><b>Чертить с любого места:</b> коснитесь пустого места на чертеже — там появится красная точка пера. Следующая линия начнётся оттуда.</li>
         <li><b>Начать</b> — начинает новую полилинию с текущей точки.</li>
         <li><b>Прервать</b> — заканчивает полилинию. Следующая линия пойдёт отдельным объектом.</li>
         <li><b>Окно 200</b> — красный отрезок 2 м. <b>Дверь 90</b> — синий отрезок 90 см.</li>
@@ -150,6 +157,11 @@
 
       <h3>9. Проекты</h3>
       <p>Нажмите на название проекта вверху. Там можно создать новый проект, открыть, переименовать или удалить старый. Каждый проект сохраняется в приложении автоматически.</p>
+      <p><b>Файл проекта.</b> Кнопка «Файл» рядом с проектом сохраняет весь проект (все этажи) в файл <b>.cadvoice</b> — в «Файлы» или в мессенджер. Чтобы открыть его, нажмите «⤓ Открыть файл проекта». Так можно восстановить работу, даже если очистился кеш Safari.</p>
+      <p><b>Важно:</b> приложение хранит проекты в памяти браузера, и очистка истории Safari их удаляет. Поэтому регулярно сохраняйте файл проекта.</p>
+
+      <h3>9а. Этажи</h3>
+      <p>Вверху кнопка с названием этажа открывает список. Можно добавить этаж («Этаж 2» и т. д.), переименовать или удалить. Каждый этаж — отдельный чертёж со своими слоями. Файл проекта содержит все этажи.</p>
 
       <h3>10. Экспорт</h3>
       <ul>
@@ -182,6 +194,7 @@
     <div class="hbtns">
       <button id="helpBtn" title="Инструкция">?</button>
       <button id="layersBtn" title="Слои">Слои</button>
+      <button id="spaceBtn"><span id="spaceName">Этаж 1</span> ▾</button>
       <button id="projBtn"><span id="projName">Проект</span> ▾</button>
     </div>
   </header>
@@ -257,7 +270,21 @@
         <button id="projClose">Закрыть</button>
       </div>
       <button id="projNew">+ Новый проект</button>
+      <button id="projImport">⤓ Открыть файл проекта (.cadvoice)</button>
+      <input id="projFile" type="file" accept=".cadvoice,.json,application/json" hidden>
       <ul id="projList"></ul>
+    </div>
+  </div>
+
+  <div id="spacePanel" class="modal" hidden>
+    <div class="sheet">
+      <div class="sheet-head">
+        <h2>Этажи и пространства</h2>
+        <button id="spaceClose">Закрыть</button>
+      </div>
+      <p style="margin:0;font-size:13px;color:#666">Каждый этаж — отдельный чертёж внутри проекта. Нажмите на название, чтобы открыть этаж.</p>
+      <button id="spaceNew">+ Новый этаж</button>
+      <ul id="spaceList"></ul>
     </div>
   </div>
 

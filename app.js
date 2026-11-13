@@ -10,7 +10,7 @@ const newId = () => "p" + Date.now().toString(36) + Math.random().toString(36).s
 
 // ---------- состояние ----------
 let db = loadDb();
-let state = db.projects[db.current].state;
+let state = spaceStateOf(db.projects[db.current]);
 let undoStack = [];
 let redoStack = [];
 
@@ -26,7 +26,8 @@ let sel = [];
 let arrows = null;
 let pivot = null;        // выбранный сегмент {ent, seg}
 
-// ---------- проекты и слои ----------
+// ---------- проекты, этажи и файлы проектов ----------
+// Проект = набор пространств (этажей). У каждого этажа свой чертёж и слои.
 function ensureLayers(s) {
   if (!s.layers) s.layers = {};
   if (!s.layers["0"]) s.layers["0"] = { visible: true };
@@ -34,32 +35,62 @@ function ensureLayers(s) {
   return s;
 }
 
+function newProjectObj(id, name) {
+  const sid = newId();
+  return {
+    id, name, created: Date.now(), updated: Date.now(),
+    spaces: [{ id: sid, name: "Этаж 1", state: newState() }],
+    curSpace: sid,
+  };
+}
+
+function curProject() {
+  return db.projects[db.current];
+}
+
+function curSpaceObj(p) {
+  return p.spaces.find((s) => s.id === p.curSpace) || p.spaces[0];
+}
+
+function spaceStateOf(p) {
+  const sp = curSpaceObj(p);
+  p.curSpace = sp.id;
+  return ensureLayers(sp.state);
+}
+
 function loadDb() {
   try {
     const d = JSON.parse(localStorage.getItem(DB_KEY));
     if (d && d.projects && d.projects[d.current]) {
-      for (const p of Object.values(d.projects)) ensureLayers(p.state);
+      for (const p of Object.values(d.projects)) {
+        if (!p.spaces || !p.spaces.length) {
+          const sid = newId();
+          p.spaces = [{ id: sid, name: "Этаж 1", state: p.state || newState() }];
+          p.curSpace = sid;
+          delete p.state;
+        }
+        for (const sp of p.spaces) ensureLayers(sp.state);
+        if (!p.spaces.find((s) => s.id === p.curSpace)) p.curSpace = p.spaces[0].id;
+      }
       return d;
     }
   } catch (e) { /* нет данных */ }
   let legacy = null;
   try { legacy = JSON.parse(localStorage.getItem(LEGACY_KEY)); } catch (e) { /* нет данных */ }
   const id = newId();
-  const st = legacy && Array.isArray(legacy.entities) ? legacy : newState();
-  return {
-    current: id,
-    projects: { [id]: { id, name: "Проект 1", created: Date.now(), updated: Date.now(), state: ensureLayers(st) } },
-  };
+  const p = newProjectObj(id, "Проект 1");
+  if (legacy && Array.isArray(legacy.entities)) p.spaces[0].state = ensureLayers(legacy);
+  return { current: id, projects: { [id]: p } };
 }
 
 function persist() {
-  const p = db.projects[db.current];
-  p.state = state;
+  const p = curProject();
+  curSpaceObj(p).state = state;
   p.updated = Date.now();
   try {
     localStorage.setItem(DB_KEY, JSON.stringify(db));
   } catch (e) {
-    setStatus("Не хватает памяти для сохранения", "idle");
+    setStatus("Не хватает памяти браузера. Сохраните проект в файл (☰ Проекты → Сохранить файл).", "idle");
   }
 }
 
@@ -70,12 +101,13 @@ function resetTools() {
   pendA = null;
   pivot = null;
   sel = [];
+  arrows = null;
 }
 
 function openProject(id) {
   persist();
   db.current = id;
-  state = ensureLayers(db.projects[id].state);
+  state = spaceStateOf(db.projects[id]);
   resetTools();
   persist();
   refresh();
@@ -86,9 +118,9 @@ function createProject() {
   if (!name) return;
   persist();
   const id = newId();
-  db.projects[id] = { id, name, created: Date.now(), updated: Date.now(), state: newState() };
+  db.projects[id] = newProjectObj(id, name);
   db.current = id;
-  state = db.projects[id].state;
+  state = spaceStateOf(db.projects[id]);
   resetTools();
   persist();
   refresh();
@@ -113,11 +145,53 @@ function deleteProject(id) {
   if (db.current === id) {
     const next = Object.values(db.projects).sort((a, b) => b.updated - a.updated)[0];
     db.current = next.id;
-    state = ensureLayers(next.state);
+    state = spaceStateOf(next);
     resetTools();
   }
   persist();
   refresh();
+}
+
+function projectFileName(p) {
+  return fileName("cadvoice", p, null);
+}
+
+function exportProject(id) {
+  if (id === db.current) persist();
+  const p = db.projects[id];
+  const data = { format: "cadvoice-project", version: 1, exported: new Date().toISOString(), project: p };
+  const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
+  shareFile(blob, projectFileName(p), "application/json");
+}
+
+function importProjectFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      const p = data && data.project;
+      if (!data || data.format !== "cadvoice-project" || !p || !Array.isArray(p.spaces) || !p.spaces.length) {
+        throw new Error("это не файл проекта CAD Voice");
+      }
+      persist();
+      const id = newId();
+      p.id = id;
+      p.updated = Date.now();
+      if (Object.values(db.projects).some((x) => x.name === p.name)) p.name += " (копия)";
+      if (!p.spaces.find((s) => s.id === p.curSpace)) p.curSpace = p.spaces[0].id;
+      for (const sp of p.spaces) ensureLayers(sp.state);
+      db.projects[id] = p;
+      db.current = id;
+      state = spaceStateOf(p);
+      resetTools();
+      persist();
+      refresh();
+      setStatus("Проект открыт: " + p.name, "idle");
+    } catch (e) {
+      setStatus("Не удалось открыть файл: " + e.message, "idle");
+    }
+  };
+  reader.readAsText(file);
 }
 
 function renderProjects() {
@@ -138,7 +212,7 @@ function renderProjects() {
       info.addEventListener("click", () => openProject(p.id));
       const actions = document.createElement("div");
       actions.className = "pacts";
-      for (const [label, fn] of [["Переименовать", renameProject], ["Удалить", deleteProject]]) {
+      for (const [label, fn] of [["Переименовать", renameProject], ["Файл", exportProject], ["Удалить", deleteProject]]) {
         const b = document.createElement("button");
         b.textContent = label;
         b.addEventListener("click", (e) => { e.stopPropagation(); fn(p.id); });
@@ -147,6 +221,83 @@ function renderProjects() {
       li.append(info, actions);
       list.appendChild(li);
     });
+}
+
+function renderSpaces() {
+  const p = curProject();
+  const list = $("spaceList");
+  list.innerHTML = "";
+  p.spaces.forEach((sp) => {
+    const li = document.createElement("li");
+    if (sp.id === p.curSpace) li.className = "cur";
+    const name = document.createElement("b");
+    name.textContent = sp.name;
+    name.style.cursor = "pointer";
+    name.style.flex = "1";
+    name.addEventListener("click", () => switchSpace(sp.id));
+    const ren = document.createElement("button");
+    ren.textContent = "Имя";
+    ren.addEventListener("click", () => renameSpace(sp.id));
+    const del = document.createElement("button");
+    del.textContent = "Удалить";
+    del.addEventListener("click", () => deleteSpace(sp.id));
+    li.append(name, ren, del);
+    list.appendChild(li);
+  });
+}
+
+function switchSpace(id) {
+  const p = curProject();
+  if (id === p.curSpace) return;
+  persist();
+  p.curSpace = id;
+  state = ensureLayers(curSpaceObj(p).state);
+  resetTools();
+  persist();
+  refresh();
+  renderSpaces();
+  setStatus("Открыт: " + curSpaceObj(p).name, "idle");
+}
+
+function createSpace() {
+  const p = curProject();
+  const name = (prompt("Название этажа или пространства:", "Этаж " + (p.spaces.length + 1)) || "").trim();
+  if (!name) return;
+  const sid = newId();
+  p.spaces.push({ id: sid, name, state: newState() });
+  switchSpace(sid);
+  renderSpaces();
+}
+
+function renameSpace(id) {
+  const p = curProject();
+  const sp = p.spaces.find((s) => s.id === id);
+  const name = (prompt("Новое название:", sp.name) || "").trim();
+  if (!name) return;
+  sp.name = name;
+  persist();
+  refresh();
+  renderSpaces();
+}
+
+function deleteSpace(id) {
+  const p = curProject();
+  if (p.spaces.length <= 1) {
+    alert("В проекте должен остаться хотя бы один этаж.");
+    return;
+  }
+  const sp = p.spaces.find((s) => s.id === id);
+  if (!confirm(`Удалить «${sp.name}» вместе с чертежом?`)) return;
+  if (p.curSpace === id) {
+    const other = p.spaces.find((s) => s.id !== id);
+    p.curSpace = other.id;
+    state = ensureLayers(other.state);
+    resetTools();
+  }
+  p.spaces = p.spaces.filter((s) => s.id !== id);
+  persist();
+  refresh();
+  renderSpaces();
 }
 
 function renderLayers() {
@@ -193,7 +344,9 @@ function addLayer() {
 }
 
 function refresh() {
-  $("projName").textContent = db.projects[db.current].name;
+  const p = curProject();
+  $("projName").textContent = p.name;
+  $("spaceName").textContent = curSpaceObj(p).name;
   renderProjects();
   draw();
 }
@@ -661,6 +814,14 @@ function handleTap(p) {
     else sel.push(hit);
   } else {
     sel = [];
+    const w = snapPoint(p);
+    undoStack.push(snapshot(state));
+    redoStack = [];
+    state.pos = { x: w.x, y: w.y };
+    state.active = null;
+    addHistory(`Новая точка начала: (${w.x.toFixed(0)}, ${w.y.toFixed(0)})`);
+    setStatus("Точка начала отмечена. Введите длину линии или нажмите стрелку у узла.", "idle");
+    persist();
   }
   updateSelBar();
   if (sel.length) setStatus("Выберите ещё сегменты или нажмите «Удалить», «Заметка», «Повернуть».", "idle");
@@ -785,10 +946,14 @@ function applyRotate() {
 }
 
 // ---------- экспорт ----------
-function fileName(ext) {
-  const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
-  const base = db.projects[db.current].name.replace(/[^\w-]+/g, "") || "drawing";
-  return `${base}-${stamp}.${ext}`;
+// Имя файла: название проекта, этаж и дата (кириллица сохраняется)
+function fileName(ext, proj = curProject(), space = curSpaceObj(proj)) {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}`;
+  const clean = (s) => String(s).replace(/[\\/:*?"<>|\s]+/g, "_").replace(/^_+|_+$/g, "");
+  const parts = [proj.name, space ? space.name : null, stamp].filter(Boolean).map(clean);
+  return parts.join("_") + "." + ext;
 }
 
 function shareFile(blob, name, type) {
@@ -1119,7 +1284,7 @@ $("clear").addEventListener("click", () => {
   state = newState();
   state.layers = layers;
   state.curLayer = curLayer;
-  db.projects[db.current].state = state;
+  curSpaceObj(curProject()).state = state;
   addHistory("Чертёж очищен");
   persist();
   draw();
@@ -1131,6 +1296,18 @@ $("projBtn").addEventListener("click", () => {
 });
 $("projClose").addEventListener("click", () => ($("projPanel").hidden = true));
 $("projNew").addEventListener("click", createProject);
+$("projImport").addEventListener("click", () => $("projFile").click());
+$("projFile").addEventListener("change", (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (f) importProjectFile(f);
+  e.target.value = "";
+});
+$("spaceBtn").addEventListener("click", () => {
+  renderSpaces();
+  $("spacePanel").hidden = false;
+});
+$("spaceClose").addEventListener("click", () => ($("spacePanel").hidden = true));
+$("spaceNew").addEventListener("click", createSpace);
 $("layersBtn").addEventListener("click", () => {
   renderLayers();
   $("layerPanel").hidden = false;
