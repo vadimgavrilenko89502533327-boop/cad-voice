@@ -89,6 +89,16 @@
     .welcome-card #welcomeNext { background:var(--dark); color:#fff; font-size:17px; padding:14px; }
     #welcome { position:fixed; inset:0; background:var(--bg); display:flex; padding:16px; padding-top: calc(16px + env(safe-area-inset-top)); z-index:20; }
     #welcome[hidden] { display:none; }
+    #focusBar { display:none; position:fixed; left:0; right:0; bottom:0; background:rgba(28,28,28,.92); color:#fff; padding:8px 10px calc(8px + env(safe-area-inset-bottom)); gap:6px; align-items:center; z-index:15; }
+    #focusBar button { padding:10px 10px; font-size:14px; background:#444; color:#fff; }
+    #focusBar #focusExit { background:#fff; color:var(--dark); }
+    #focusInfo { flex:1; font-size:13px; color:#ddd; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+    body.focus #focusBar { display:flex; }
+    body.focus header, body.focus #status, body.focus .legend, body.focus .row, body.focus #heard, body.focus #partial,
+    body.focus .hist-head, body.focus #history, body.focus form, body.focus .turns, body.focus .ruler, body.focus .bottom,
+    body.focus #welcome, body.focus #selbar { display:none !important; }
+    body.focus { padding: env(safe-area-inset-top) 6px 0; }
+    body.focus .canvas-wrap { margin-bottom:52px; }
   </style>
 </head>
 <body>
@@ -222,6 +232,7 @@
       <button id="zin" title="Приблизить">＋</button>
       <button id="zout" title="Отдалить">−</button>
       <button id="zfit" title="Вписать">⤢</button>
+      <button id="focusBtn" title="Только чертёж">⛶</button>
     </div>
   </div>
   <div class="legend">Красный — окно, синий — дверь. Касание линии выбирает сегмент.</div>
@@ -344,6 +355,14 @@
         <button id="rotOk">Повернуть</button>
       </div>
     </div>
+  </div>
+
+  <div id="focusBar">
+    <button id="focusExit">⤡ Выход</button>
+    <button id="focusRuler">📏</button>
+    <button id="focusMeasure">Измерять</button>
+    <span id="focusInfo"></span>
+    <button id="focusUndo">↶</button>
   </div>
 
   <script src="vendor/vosk.js"></script>

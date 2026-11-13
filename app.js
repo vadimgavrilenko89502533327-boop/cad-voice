@@ -1350,6 +1350,27 @@ function toggleFullscreen() {
 
 $("fullBtn").addEventListener("click", toggleFullscreen);
 
+// ---------- режим «только чертёж» ----------
+function setFocus(on) {
+  document.body.classList.toggle("focus", on);
+  requestAnimationFrame(draw);
+}
+
+$("focusBtn").addEventListener("click", () => setFocus(true));
+$("focusExit").addEventListener("click", () => setFocus(false));
+$("focusRuler").addEventListener("click", () => $("rulerConnect").click());
+$("focusMeasure").addEventListener("click", () => $("rulerMeasure").click());
+$("focusUndo").addEventListener("click", () => runText("отмена"));
+
+function mirror(fromId, toId) {
+  const from = $(fromId);
+  new MutationObserver(() => { $(toId).textContent = from.textContent; })
+    .observe(from, { childList: true, characterData: true, subtree: true });
+  $(toId).textContent = from.textContent;
+}
+mirror("rulerStatus", "focusInfo");
+mirror("rulerMeasure", "focusMeasure");
+
 $("startLine").addEventListener("click", () => runText("начать"));
 $("breakLine").addEventListener("click", () => runText("прервать"));
 $("left90").addEventListener("click", () => runText("налево 90"));
