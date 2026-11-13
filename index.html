@@ -51,7 +51,7 @@
     form input { flex:1; font:inherit; font-size:16px; border:1px solid #d6d6d6; border-radius:12px; padding:10px 12px; background:#fff; }
     form button { background:var(--dark); color:#fff; }
     .legend { font-size:12px; color:var(--muted); margin:6px 4px 0; }
-    #selbar { display:flex; gap:8px; align-items:center; margin-top:8px; background:#fff; border-radius:12px; padding:6px 8px; font-size:13px; }
+    #selbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:8px; background:#fff; border-radius:12px; padding:6px 8px; font-size:13px; }
     #selbar[hidden] { display:none; }
     #selbar span { flex:1; color:#555; }
     #selbar button { padding:8px 10px; font-size:13px; }
@@ -114,6 +114,7 @@
         <li>Коснитесь второй точки. Линия соединит их.</li>
       </ol>
       <p>Точка «прилипает» к ближайшей вершине, если касаться рядом с ней.</p>
+      <p><b>Стрелки направления.</b> Коснитесь узла (вершины) на чертеже: вокруг него появятся четыре синие стрелки — направо, вверх, налево и вниз (через 90°). Нажмите нужную стрелку: линия начнётся от этой точки в её направлении. Дальше введите длину числом.</p>
 
       <h3>4. Выбор и правка сегментов</h3>
       <ul>
@@ -122,6 +123,7 @@
         <li><b>Удалить</b> — удаляет выбранные сегменты. Полилиния разбивается на части, заметки остаются у своих сегментов.</li>
         <li><b>Заметка</b> — пишет одну заметку на все выбранные сегменты, например «ширина 0.9 м». Заметка видна на чертеже и попадает в DXF.</li>
         <li><b>Повернуть</b> — нажмите, затем коснитесь точки поворота. Откроется окно: сторона (направо или налево) и угол в градусах. Поворачиваются только выбранные сегменты, соседние линии остаются на месте.</li>
+        <li><b>Окно / Дверь / Обычная</b> — назначает тип выбранным сегментам. Окно становится красным, дверь — синим, обычная линия — чёрной. В DXF тип тоже сохраняется.</li>
         <li><b>✕</b> — снимает выбор.</li>
       </ul>
 
@@ -199,6 +201,9 @@
     <span id="selCount">Выбрано сегментов: 0</span>
     <button id="selNote">Заметка</button>
     <button id="selRot">Повернуть</button>
+    <button id="selWin">Окно</button>
+    <button id="selDoor">Дверь</button>
+    <button id="selPlain">Обычная</button>
     <button id="selDel">Удалить</button>
     <button id="selClear">✕</button>
   </div>

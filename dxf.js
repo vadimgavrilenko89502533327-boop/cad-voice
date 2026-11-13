@@ -49,6 +49,10 @@ export function buildDxf(entities, layers = { "0": { visible: true } }) {
       });
       p(0, "SEQEND"); p(8, L);
       for (const [i, [a, b]] of polySegments(e).entries()) {
+        if (e.kinds && e.kinds[i]) {
+          p(0, "LINE"); p(8, L); p(62, e.kinds[i] === "window" ? 1 : 5);
+          p(10, n(a.x)); p(20, n(a.y)); p(11, n(b.x)); p(21, n(b.y));
+        }
         const dx = b.x - a.x, dy = b.y - a.y;
         const len = Math.hypot(dx, dy) || 1;
         const mx = (a.x + b.x) / 2 + (-dy / len) * (LABEL_OFF / K);

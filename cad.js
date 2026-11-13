@@ -133,7 +133,7 @@ function openPoly(e) {
     pts.push({ ...pts[0] });
     bulges.push(0);
   }
-  return { pts, bulges, notes: { ...(e.notes || {}) } };
+  return { pts, bulges, notes: { ...(e.notes || {}) }, kinds: { ...(e.kinds || {}) } };
 }
 
 // Удаляет сегмент idx: возвращает новые полилинии (одна или две), заметки переносятся
@@ -152,7 +152,7 @@ export function cutPolyline(e, idx) {
 
 // Удаляет набор сегментов (Set индексов): возвращает части полилинии, заметки переносятся
 export function removeSegments(e, removeSet) {
-  const { pts, bulges, notes } = openPoly(e);
+  const { pts, bulges, notes, kinds } = openPoly(e);
   const m = pts.length - 1;
   const runs = [];
   let start = null;
@@ -167,10 +167,14 @@ export function removeSegments(e, removeSet) {
   if (start !== null) runs.push([start, m - 1]);
   return runs
     .map(([a, b]) => {
-      const piece = { type: "poly", pts: pts.slice(a, b + 2), bulges: bulges.slice(a, b + 1), closed: false, notes: {} };
+      const piece = { type: "poly", pts: pts.slice(a, b + 2), bulges: bulges.slice(a, b + 1), closed: false, notes: {}, kinds: {} };
       for (const k of Object.keys(notes)) {
         const i = Number(k);
         if (i >= a && i <= b) piece.notes[i - a] = notes[k];
+      }
+      for (const k of Object.keys(kinds)) {
+        const i = Number(k);
+        if (i >= a && i <= b) piece.kinds[i - a] = kinds[k];
       }
       return piece;
     })

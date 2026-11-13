@@ -23,6 +23,7 @@ let lastInv = null;
 let tool = "idle";          // idle | pickA | pickB
 let pendA = null;           // первая точка линии A–B
 let sel = [];
+let arrows = null;
 let pivot = null;        // выбранный сегмент {ent, seg}
 
 // ---------- проекты и слои ----------
@@ -340,6 +341,19 @@ function draw() {
         }
       }
       ctx.stroke();
+      segs.forEach(([p, q], i) => {
+        const k = e.kinds && e.kinds[i];
+        if (!k) return;
+        const a = tr(p), bq = tr(q);
+        ctx.save();
+        ctx.strokeStyle = k === "window" ? "#d32f2f" : "#1e5fd0";
+        ctx.lineWidth = 7;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(bq.x, bq.y);
+        ctx.stroke();
+        ctx.restore();
+      });
       for (const [p, q] of segs) {
         const a = tr(p), bq = tr(q);
         const dx = bq.x - a.x, dy = bq.y - a.y;
@@ -455,6 +469,18 @@ function drawOverlays(tr) {
     ctx.arc(q.x, q.y, 9, 0, Math.PI * 2);
     ctx.stroke();
   }
+  for (const a of arrowGeom(tr)) {
+    const tipX = a.x + a.ux * 10, tipY = a.y + a.uy * 10;
+    const bx = a.x - a.ux * 6, by = a.y - a.uy * 6;
+    const px = -a.uy * 6, py = a.ux * 6;
+    ctx.fillStyle = "#1e5fd0";
+    ctx.beginPath();
+    ctx.moveTo(tipX, tipY);
+    ctx.lineTo(bx + px, by + py);
+    ctx.lineTo(bx - px, by - py);
+    ctx.closePath();
+    ctx.fill();
+  }
   if (pendA) {
     const q = tr(pendA);
     ctx.strokeStyle = "#1e5fd0";
@@ -544,6 +570,41 @@ function createLine(a, b) {
   draw();
 }
 
+// Четыре стрелки у выбранного узла: направо, вверх, налево, вниз (углы 0, 90, 180, 270)
+const ARROW_DIRS = [0, 90, 180, 270];
+
+function arrowGeom(tr) {
+  if (!arrows || !tr) return [];
+  const c = tr(arrows);
+  return ARROW_DIRS.map((deg) => {
+    const r = (deg * Math.PI) / 180;
+    const ux = Math.cos(r), uy = -Math.sin(r);
+    return { deg, x: c.x + ux * 30, y: c.y + uy * 30, ux, uy };
+  });
+}
+
+function arrowAt(p) {
+  const hit = arrowGeom(lastTr).find((a) => Math.hypot(a.x - p.x, a.y - p.y) < 18);
+  return hit ? hit.deg : null;
+}
+
+function applyKind(kind) {
+  if (!sel.length) return;
+  undoStack.push(snapshot(state));
+  redoStack = [];
+  for (const s of sel) {
+    const e = state.entities[s.ent];
+    if (e.type !== "poly") continue;
+    e.kinds = e.kinds || {};
+    if (kind) e.kinds[s.seg] = kind;
+    else delete e.kinds[s.seg];
+  }
+  const names = { window: "окно", door: "дверь" };
+  addHistory(`Сегментов: ${sel.length}, тип: ${kind ? names[kind] : "обычный"}`);
+  persist();
+  draw();
+}
+
 function handleTap(p) {
   if (tool === "pickA") {
     pendA = snapPoint(p);
@@ -569,7 +630,30 @@ function handleTap(p) {
     openRotate();
     return;
   }
-  if (pickNode(p)) return;
+  if (arrows) {
+    const dir = arrowAt(p);
+    if (dir !== null) {
+      undoStack.push(snapshot(state));
+      redoStack = [];
+      state.pos = { x: arrows.x, y: arrows.y };
+      state.angle = dir;
+      state.active = null;
+      arrows = null;
+      addHistory(`Линия от точки, направление ${dir}°`);
+      persist();
+      draw();
+      setStatus(`Направление ${dir}°. Скажите или напишите длину линии.`, "idle");
+      return;
+    }
+  }
+  const nd = nodeAt(p);
+  if (nd) {
+    pickNode(p);
+    arrows = { x: nd.x, y: nd.y };
+    draw();
+    return;
+  }
+  arrows = null;
   const hit = hitSegment(p);
   if (hit) {
     const i = sel.findIndex((s) => s.ent === hit.ent && s.seg === hit.seg);
@@ -683,6 +767,7 @@ function applyRotate() {
         bulges: [(e.bulges && e.bulges[seg]) || 0],
         closed: false,
         notes: e.notes && e.notes[seg] ? { 0: e.notes[seg] } : {},
+        kinds: e.kinds && e.kinds[seg] ? { 0: e.kinds[seg] } : {},
         layer: e.layer,
       };
     });
@@ -1004,6 +1089,9 @@ $("lineBtn").addEventListener("click", () => {
 });
 $("selNote").addEventListener("click", noteSelected);
 $("selDel").addEventListener("click", deleteSelected);
+$("selWin").addEventListener("click", () => applyKind("window"));
+$("selDoor").addEventListener("click", () => applyKind("door"));
+$("selPlain").addEventListener("click", () => applyKind(null));
 $("selRot").addEventListener("click", () => {
   if (!sel.length) return;
   tool = "pickPivot";
