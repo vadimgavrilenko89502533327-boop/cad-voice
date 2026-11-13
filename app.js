@@ -1275,6 +1275,7 @@ async function rulerConnect() {
       ruler.writeChar = null;
       $("rulerMeasure").textContent = "Измерять";
       rulerInfo("Рулетка отключена");
+      keepAwake(false);
     });
     ruler.server = await dev.gatt.connect();
     const svc = await ruler.server.getPrimaryService(RULER.service);
@@ -1302,6 +1303,7 @@ async function rulerMeasureToggle() {
     ruler.measuring = !ruler.measuring;
     await ruler.writeChar.writeValue(ruler.measuring ? RULER.start : RULER.stop);
     $("rulerMeasure").textContent = ruler.measuring ? "Остановить" : "Измерять";
+    keepAwake(ruler.measuring);
     rulerInfo(ruler.measuring ? "Измеряю. Нажмите измерение на рулетке." : "Измерение остановлено");
   } catch (err) {
     rulerInfo("Ошибка команды: " + err.message);
@@ -1310,6 +1312,43 @@ async function rulerMeasureToggle() {
 
 $("rulerConnect").addEventListener("click", rulerConnect);
 $("rulerMeasure").addEventListener("click", rulerMeasureToggle);
+
+// ---------- полный экран и экран не гаснет во время измерений ----------
+let wakeLock = null;
+
+async function keepAwake(on) {
+  try {
+    if (on && "wakeLock" in navigator) {
+      wakeLock = await navigator.wakeLock.request("screen");
+    } else if (wakeLock) {
+      await wakeLock.release();
+      wakeLock = null;
+    }
+  } catch (err) {
+    wakeLock = null;
+  }
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (ruler.measuring && document.visibilityState === "visible") keepAwake(true);
+});
+
+function toggleFullscreen() {
+  const isFull = document.fullscreenElement || document.webkitFullscreenElement;
+  if (isFull) {
+    (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    return;
+  }
+  const el = document.documentElement;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!req) {
+    setStatus("Полный экран в этом браузере недоступен. На iPhone добавьте приложение на экран «Домой» — оно откроется без панелей Safari.", "idle");
+    return;
+  }
+  Promise.resolve(req.call(el)).catch(() => setStatus("Браузер не разрешил полный экран.", "idle"));
+}
+
+$("fullBtn").addEventListener("click", toggleFullscreen);
 
 $("startLine").addEventListener("click", () => runText("начать"));
 $("breakLine").addEventListener("click", () => runText("прервать"));
