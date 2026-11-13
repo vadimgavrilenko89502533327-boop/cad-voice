@@ -986,12 +986,12 @@ function exportPng() {
   canvas.toBlob((blob) => shareFile(blob, fileName("png"), "image/png"), "image/png");
 }
 
-function exportPdf() {
-  draw();
-  canvas.toBlob(async (jpg) => {
-    const bytes = buildPdf(new Uint8Array(await jpg.arrayBuffer()), canvas.width, canvas.height);
-    shareFile(new Blob([bytes], { type: "application/pdf" }), fileName("pdf"), "application/pdf");
-  }, "image/jpeg", 0.92);
+async function exportPdf() {
+  const p = curProject();
+  persist();
+  const font = await (await fetch("fonts/DejaVuSans.ttf")).arrayBuffer();
+  const bytes = buildPdf(state.entities, state.layers, font);
+  shareFile(new Blob([bytes], { type: "application/pdf" }), fileName("pdf", p, curSpaceObj(p)), "application/pdf");
 }
 
 // ---------- голос: Safari (основной) и Vosk (офлайн, запасной) ----------

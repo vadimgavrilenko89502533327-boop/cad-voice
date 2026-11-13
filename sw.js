@@ -10,6 +10,7 @@ const ASSETS = [
   "dxf.js",
   "pdf.js",
   "ruler.js",
+  "fonts/DejaVuSans.ttf",
   "manifest.webmanifest",
   "vendor/vosk.js",
   "model/model.tar.gz",
