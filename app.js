@@ -1239,7 +1239,8 @@ $("mic").addEventListener("click", () => {
 });
 // ---------- лазерная рулетка FNIRSI (Web Bluetooth) ----------
 let ruler = { server: null, notifyChar: null, writeChar: null, keep: null, measuring: false };
-let rulerMm = null;
+let rulerLast = { mm: null, t: 0 };
+let rulerDrawn = null;
 
 function rulerInfo(text) {
   $("rulerStatus").textContent = text;
@@ -1248,10 +1249,14 @@ function rulerInfo(text) {
 function onRulerData(e) {
   const mm = parseRulerMm(new Uint8Array(e.target.value.buffer));
   if (mm === null) return;
-  rulerMm = mm;
-  $("rulerValue").textContent = `${(mm / 1000).toFixed(3)} м (${(mm / 10).toFixed(1)} см)`;
-  $("rulerBanner").hidden = false;
-  rulerInfo("Получено измерение");
+  const now = Date.now();
+  const newPress = now - rulerLast.t > 2000;
+  const jumped = rulerDrawn === null || Math.abs(mm - rulerDrawn) > 20;
+  rulerLast = { mm, t: now };
+  if (!newPress && !jumped) return;
+  rulerDrawn = mm;
+  rulerInfo(`Измерено: ${(mm / 1000).toFixed(3)} м`);
+  runText(String(mm / 10));
 }
 
 async function rulerConnect() {
@@ -1303,20 +1308,8 @@ async function rulerMeasureToggle() {
   }
 }
 
-function rulerDraw() {
-  if (rulerMm === null) return;
-  runText(String(rulerMm / 10));
-  rulerMm = null;
-  $("rulerBanner").hidden = true;
-}
-
 $("rulerConnect").addEventListener("click", rulerConnect);
 $("rulerMeasure").addEventListener("click", rulerMeasureToggle);
-$("rulerDraw").addEventListener("click", rulerDraw);
-$("rulerSkip").addEventListener("click", () => {
-  rulerMm = null;
-  $("rulerBanner").hidden = true;
-});
 
 $("startLine").addEventListener("click", () => runText("начать"));
 $("breakLine").addEventListener("click", () => runText("прервать"));
