@@ -1,6 +1,6 @@
 // Офлайн-кэш: при первом открытии (с сетью) скачивает всё приложение и модель,
 // дальше работает без интернета.
-const CACHE = "cad-voice-v16";
+const CACHE = "cad-voice-v17";
 const ASSETS = [
   "./",
   "index.html",
@@ -9,6 +9,7 @@ const ASSETS = [
   "cad.js",
   "dxf.js",
   "pdf.js",
+  "ruler.js",
   "manifest.webmanifest",
   "vendor/vosk.js",
   "model/model.tar.gz",

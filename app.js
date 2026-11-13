@@ -2,6 +2,7 @@ import { parse } from "./parser.js";
 import { newState, snapshot, execute, metrics, polySegments, sampleSegment, removeSegments } from "./cad.js";
 import { buildDxf, toCp1251 } from "./dxf.js";
 import { buildPdf } from "./pdf.js";
+import { RULER, parseRulerMm } from "./ruler.js";
 
 const DB_KEY = "cadvoice-projects-v1";
 const LEGACY_KEY = "cadvoice-state-v1";
@@ -1236,6 +1237,87 @@ $("mic").addEventListener("click", () => {
   else if (SpeechRec) startWebSpeech();
   else startVosk();
 });
+// ---------- лазерная рулетка FNIRSI (Web Bluetooth) ----------
+let ruler = { server: null, notifyChar: null, writeChar: null, keep: null, measuring: false };
+let rulerMm = null;
+
+function rulerInfo(text) {
+  $("rulerStatus").textContent = text;
+}
+
+function onRulerData(e) {
+  const mm = parseRulerMm(new Uint8Array(e.target.value.buffer));
+  if (mm === null) return;
+  rulerMm = mm;
+  $("rulerValue").textContent = `${(mm / 1000).toFixed(3)} м (${(mm / 10).toFixed(1)} см)`;
+  $("rulerBanner").hidden = false;
+  rulerInfo("Получено измерение");
+}
+
+async function rulerConnect() {
+  if (!navigator.bluetooth) {
+    rulerInfo("Bluetooth недоступен в этом браузере. Откройте в Chrome (ПК, Android) или в Bluefy (iPhone).");
+    return;
+  }
+  try {
+    const dev = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: RULER.namePrefix }],
+      optionalServices: [RULER.service],
+    });
+    dev.addEventListener("gattserverdisconnected", () => {
+      clearInterval(ruler.keep);
+      ruler.measuring = false;
+      ruler.writeChar = null;
+      $("rulerMeasure").textContent = "Измерять";
+      rulerInfo("Рулетка отключена");
+    });
+    ruler.server = await dev.gatt.connect();
+    const svc = await ruler.server.getPrimaryService(RULER.service);
+    ruler.notifyChar = await svc.getCharacteristic(RULER.notify);
+    ruler.writeChar = await svc.getCharacteristic(RULER.write);
+    await ruler.notifyChar.startNotifications();
+    ruler.notifyChar.addEventListener("characteristicvaluechanged", onRulerData);
+    await ruler.writeChar.writeValue(RULER.ping);
+    clearInterval(ruler.keep);
+    ruler.keep = setInterval(() => {
+      if (ruler.writeChar && !ruler.measuring) ruler.writeChar.writeValue(RULER.ping).catch(() => {});
+    }, 2000);
+    rulerInfo(`Подключено: ${dev.name || "рулетка"}. Нажмите «Измерять».`);
+  } catch (err) {
+    rulerInfo("Не подключилось: " + err.message);
+  }
+}
+
+async function rulerMeasureToggle() {
+  if (!ruler.writeChar) {
+    rulerConnect();
+    return;
+  }
+  try {
+    ruler.measuring = !ruler.measuring;
+    await ruler.writeChar.writeValue(ruler.measuring ? RULER.start : RULER.stop);
+    $("rulerMeasure").textContent = ruler.measuring ? "Остановить" : "Измерять";
+    rulerInfo(ruler.measuring ? "Измеряю. Нажмите измерение на рулетке." : "Измерение остановлено");
+  } catch (err) {
+    rulerInfo("Ошибка команды: " + err.message);
+  }
+}
+
+function rulerDraw() {
+  if (rulerMm === null) return;
+  runText(String(rulerMm / 10));
+  rulerMm = null;
+  $("rulerBanner").hidden = true;
+}
+
+$("rulerConnect").addEventListener("click", rulerConnect);
+$("rulerMeasure").addEventListener("click", rulerMeasureToggle);
+$("rulerDraw").addEventListener("click", rulerDraw);
+$("rulerSkip").addEventListener("click", () => {
+  rulerMm = null;
+  $("rulerBanner").hidden = true;
+});
+
 $("startLine").addEventListener("click", () => runText("начать"));
 $("breakLine").addEventListener("click", () => runText("прервать"));
 $("left90").addEventListener("click", () => runText("налево 90"));

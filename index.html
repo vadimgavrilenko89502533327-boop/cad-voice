@@ -51,6 +51,14 @@
     form input { flex:1; font:inherit; font-size:16px; border:1px solid #d6d6d6; border-radius:12px; padding:10px 12px; background:#fff; }
     form button { background:var(--dark); color:#fff; }
     .legend { font-size:12px; color:var(--muted); margin:6px 4px 0; }
+    .ruler { background:#fff; border-radius:12px; padding:8px; margin-top:8px; font-size:13px; }
+    .ruler-row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+    .ruler-row button, #rulerBanner button { padding:8px 10px; font-size:13px; }
+    #rulerStatus { flex:1; color:#555; min-width:120px; }
+    #rulerBanner { display:flex; gap:6px; align-items:center; margin-top:8px; background:#fff7e0; border-radius:10px; padding:6px 8px; flex-wrap:wrap; }
+    #rulerBanner[hidden] { display:none; }
+    #rulerBanner span { flex:1; }
+    #rulerDraw { background:var(--dark); color:#fff; }
     #selbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:8px; background:#fff; border-radius:12px; padding:6px 8px; font-size:13px; }
     #selbar[hidden] { display:none; }
     #selbar span { flex:1; color:#555; }
@@ -178,6 +186,18 @@
         <li>Если голос не слышит, используйте текстовое поле внизу: напишите команду и нажмите OK.</li>
       </ul>
 
+      <h3>12. Лазерная рулетка FNIRSI</h3>
+      <ol>
+        <li>Включите рулетку и нажмите «📏 Рулетка». Выберите устройство в списке (название начинается с fnirsi).</li>
+        <li>Нажмите «Измерять», затем кнопку измерения на самой рулетке.</li>
+        <li>Появится «Измерено: 2.000 м». Нажмите «Нарисовать линию»: линия такой длины пойдёт от текущей точки в текущем направлении.</li>
+        <li>«✕» — пропустить измерение.</li>
+      </ol>
+      <ul>
+        <li><b>Где работает:</b> в Chrome на компьютере и Android, в браузере Bluefy на iPhone. В Safari на iPhone Bluetooth для веб-страниц не поддерживается.</li>
+        <li>Если рулетка не видна, включите её и поднесите ближе к телефону или компьютеру.</li>
+      </ul>
+
       <h3>Если что-то не работает</h3>
       <ul>
         <li>Не обновилось приложение: удалите иконку CAD Voice с экрана «Домой» и добавьте заново через «Поделиться» → «На экран «Домой»».</li>
@@ -249,6 +269,19 @@
   <div class="turns">
     <button id="left90">↺ Налево 90°</button>
     <button id="right90">↻ Направо 90°</button>
+  </div>
+
+  <div class="ruler">
+    <div class="ruler-row">
+      <button id="rulerConnect">📏 Рулетка</button>
+      <button id="rulerMeasure">Измерять</button>
+      <span id="rulerStatus">Рулетка не подключена</span>
+    </div>
+    <div id="rulerBanner" hidden>
+      <span>Измерено: <b id="rulerValue"></b></span>
+      <button id="rulerDraw">Нарисовать линию</button>
+      <button id="rulerSkip">✕</button>
+    </div>
   </div>
 
   <div class="bottom">
